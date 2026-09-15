@@ -765,6 +765,21 @@ async function initializeState() {
         metadata jsonb not null default '{}'::jsonb
       )
     `);
+    await pool.query(`
+      create table if not exists amazon_selection_intelligence_attempts (
+        request_id text primary key,
+        session_id text not null,
+        plan_hash text not null,
+        action_id text not null,
+        observation_hash text not null,
+        candidate_count integer not null,
+        status text not null,
+        response_json jsonb,
+        started_at timestamptz not null,
+        completed_at timestamptz,
+        updated_at timestamptz not null default now()
+      )
+    `);
     const result = await pool.query('select state_json from app_state where state_key = $1', [STATE_ROW_KEY]);
     if (result.rows[0]?.state_json) {
       state = hydratePostgresState(result.rows[0].state_json);
@@ -848,6 +863,70 @@ export async function flushPersistence() {
   }
   await persistQueue;
   return getPersistenceStatus();
+}
+
+function formatAmazonSelectionIntelligenceAttempt(row = null) {
+  if (!row) return null;
+  return {
+    requestId: String(row.request_id || ''),
+    sessionId: String(row.session_id || ''),
+    planHash: String(row.plan_hash || ''),
+    actionId: String(row.action_id || ''),
+    observationHash: String(row.observation_hash || ''),
+    candidateCount: Number(row.candidate_count || 0),
+    status: String(row.status || ''),
+    response: row.response_json || null,
+    startedAt: row.started_at instanceof Date ? row.started_at.toISOString() : String(row.started_at || ''),
+    completedAt: row.completed_at instanceof Date ? row.completed_at.toISOString() : row.completed_at || null
+  };
+}
+
+export async function reserveAmazonSelectionIntelligenceAttempt(attempt = {}) {
+  if (!pool || persistence.driver !== 'postgres') {
+    return { reserved: true, attempt: null, requiresStateFlush: true };
+  }
+  const result = await pool.query(
+    `
+      insert into amazon_selection_intelligence_attempts (
+        request_id, session_id, plan_hash, action_id, observation_hash,
+        candidate_count, status, response_json, started_at, updated_at
+      )
+      values ($1, $2, $3, $4, $5, $6, 'pending', null, $7::timestamptz, now())
+      on conflict (request_id) do nothing
+      returning *
+    `,
+    [
+      String(attempt.requestId || ''),
+      String(attempt.sessionId || ''),
+      String(attempt.planHash || ''),
+      String(attempt.actionId || ''),
+      String(attempt.observationHash || ''),
+      Math.max(0, Number(attempt.candidateCount || 0) || 0),
+      String(attempt.startedAt || new Date().toISOString())
+    ]
+  );
+  if (result.rows[0]) {
+    return { reserved: true, attempt: formatAmazonSelectionIntelligenceAttempt(result.rows[0]), requiresStateFlush: false };
+  }
+  const existing = await pool.query(
+    'select * from amazon_selection_intelligence_attempts where request_id = $1',
+    [String(attempt.requestId || '')]
+  );
+  return { reserved: false, attempt: formatAmazonSelectionIntelligenceAttempt(existing.rows[0]), requiresStateFlush: false };
+}
+
+export async function completeAmazonSelectionIntelligenceAttempt(requestId, response = null) {
+  if (!pool || persistence.driver !== 'postgres') return null;
+  const result = await pool.query(
+    `
+      update amazon_selection_intelligence_attempts
+      set status = 'completed', response_json = $2::jsonb, completed_at = now(), updated_at = now()
+      where request_id = $1
+      returning *
+    `,
+    [String(requestId || ''), JSON.stringify(response || null)]
+  );
+  return formatAmazonSelectionIntelligenceAttempt(result.rows[0]);
 }
 
 export function registerAgent(agent) {
@@ -1207,6 +1286,17 @@ export function updateConnectorSession(id, patch) {
     updatedAt: new Date().toISOString()
   };
   persistState();
+  return state.connectorSessions[idx];
+}
+
+export function updateConnectorSessionEphemeral(id, patch) {
+  const idx = state.connectorSessions.findIndex((row) => row.id === id);
+  if (idx < 0) return null;
+  state.connectorSessions[idx] = {
+    ...state.connectorSessions[idx],
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
   return state.connectorSessions[idx];
 }
 

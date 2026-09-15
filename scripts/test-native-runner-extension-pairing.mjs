@@ -792,6 +792,8 @@ async function main() {
       primeEligible: true,
       freeShipping: true,
       conditionalShipping: false,
+      requiresProductPageVerification: false,
+      identityStatus: 'verified',
       sponsored: false,
       hardEligible: true
     }];

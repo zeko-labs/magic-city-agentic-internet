@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Magic City Runner",
-  "version": "0.5.15",
+  "version": "0.5.17",
   "description": "Runs bounded Magic City browser tasks in your Chrome profile, pausing only for login, verification, or policy mismatches.",
   "icons": {
     "16": "icons/icon-16.png",

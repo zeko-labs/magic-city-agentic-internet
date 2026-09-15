@@ -62,7 +62,9 @@ if (!/export function selectAmazonSearchCard/.test(packagedAmazonSelection)
   || !/requiresApproval: true/.test(packagedAmazonSelection)) {
   fail('Amazon selection must remain exact-first and bounded, with signed opt-in required for automatic closest-size fallbacks');
 }
-if (!/quickOutcome\.requiresProductPageVerification === true/.test(packagedLegacyBackground)
+if (!/async function completeAmazonSelectionOutcome/.test(packagedLegacyBackground)
+  || !/outcome\.requiresProductPageVerification !== true/.test(packagedLegacyBackground)
+  || !/amazonProductIdentityMatches/.test(packagedLegacyBackground)
   || !/summary\.productShippingKnown === true/.test(packagedLegacyBackground)
   || !/selectionKind: 'no_verified_candidate'/.test(packagedLegacyBackground)) {
   fail('Amazon selection must verify inconclusive matching offers on one product page before continuing');

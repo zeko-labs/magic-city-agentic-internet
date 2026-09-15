@@ -94,6 +94,8 @@ import {
   anonymizeUser,
   flushPersistence,
   getPersistenceStatus,
+  reserveAmazonSelectionIntelligenceAttempt,
+  completeAmazonSelectionIntelligenceAttempt,
   createPayoutRequest,
   settlePayoutRequest,
   listPayoutRequests,
@@ -138,6 +140,7 @@ import {
   createConnectorSession,
   getConnectorSession,
   updateConnectorSession,
+  updateConnectorSessionEphemeral,
   listConnectorSessions,
   createAgentSdkMission,
   getAgentSdkMission,
@@ -7510,19 +7513,23 @@ function normalizeAmazonSelectionIntelligenceCandidates(values = [], planAction 
     const price = candidate?.price === null || candidate?.price === '' || candidate?.price === undefined
       ? null
       : Number(candidate.price);
+    const requiresProductPageVerification = candidate?.requiresProductPageVerification === true;
+    const identityStatus = String(candidate?.identityStatus || '').trim().toLowerCase();
     if (!/^candidate-\d{1,2}$/.test(id) || !/^[A-Z0-9]{10}$/.test(asin) || !title) {
       throw createHttpError('amazon_candidate_ranker_candidate_invalid', 400);
     }
     if (ids.has(id) || asins.has(asin)) throw createHttpError('amazon_candidate_ranker_candidate_duplicate', 400);
     ids.add(id);
     asins.add(asin);
-    if (!Number.isFinite(price) || price <= 0 || (Number.isFinite(maxPrice) && maxPrice > 0 && price > maxPrice + 0.005)) {
+    if ((price !== null && (!Number.isFinite(price) || price <= 0))
+      || (!requiresProductPageVerification && price === null)
+      || (Number.isFinite(price) && Number.isFinite(maxPrice) && maxPrice > 0 && price > maxPrice + 0.005)) {
       throw createHttpError('amazon_candidate_ranker_price_invalid', 400);
     }
     const primeEligible = candidate?.primeEligible === true;
     const freeShipping = candidate?.freeShipping === true;
     const conditionalShipping = candidate?.conditionalShipping === true;
-    if (primeRequired && (!primeEligible || !freeShipping || conditionalShipping)) {
+    if (!requiresProductPageVerification && primeRequired && (!primeEligible || !freeShipping || conditionalShipping)) {
       throw createHttpError('amazon_candidate_ranker_fulfillment_invalid', 400);
     }
     if (candidate?.hardEligible !== true) throw createHttpError('amazon_candidate_ranker_hard_eligibility_missing', 400);
@@ -7535,6 +7542,8 @@ function normalizeAmazonSelectionIntelligenceCandidates(values = [], planAction 
       primeEligible,
       freeShipping,
       conditionalShipping,
+      requiresProductPageVerification,
+      identityStatus: identityStatus === 'provisional' ? 'provisional' : identityStatus === 'semantic' ? 'semantic' : 'verified',
       sponsored: false,
       hardEligible: true
     };
@@ -20943,7 +20952,30 @@ const server = http.createServer(async (req, res) => {
       let rank = null;
       try {
         const startedAt = new Date().toISOString();
-        updateConnectorSession(sessionId, {
+        const durableReservation = await reserveAmazonSelectionIntelligenceAttempt({
+          sessionId,
+          planHash: plan.planHash,
+          actionId: planAction.id,
+          requestId,
+          observationHash,
+          candidateCount: publicCandidates.length,
+          startedAt
+        });
+        if (!durableReservation.reserved) {
+          const durableAttempt = durableReservation.attempt;
+          if (durableAttempt?.response) {
+            return sendAdvisoryJson(res, 200, { ...durableAttempt.response, available: true, replayed: true });
+          }
+          return sendAdvisoryJson(res, 202, amazonSelectionIntelligenceResponse({
+            sessionId,
+            planHash: plan.planHash,
+            actionId: planAction.id,
+            requestId,
+            observationHash,
+            reason: 'The existing product-match consultation has no completed result; Magic City will not repeat it.'
+          }));
+        }
+        updateConnectorSessionEphemeral(sessionId, {
           amazonSelectionIntelligenceAttempts: [
             ...attempts,
             {
@@ -20958,13 +20990,15 @@ const server = http.createServer(async (req, res) => {
             }
           ]
         });
-        // Persist the no-repeat reservation before contacting the model. If the
-        // process restarts during inference, the same signed action abstains
-        // instead of issuing a second consultation.
-        try {
-          await flushPersistence();
-        } catch {
-          throw createHttpError('amazon_candidate_ranker_persistence_unavailable', 503);
+        // File-backed development retains the full-state boundary. Production
+        // uses the compact attempt row above so persistence cannot consume the
+        // bounded model deadline.
+        if (durableReservation.requiresStateFlush) {
+          try {
+            await flushPersistence();
+          } catch {
+            throw createHttpError('amazon_candidate_ranker_persistence_unavailable', 503);
+          }
         }
         const providerTimeoutMs = rankDeadlineAt - Date.now() - 150;
         if (providerTimeoutMs >= 800) {
@@ -21007,7 +21041,8 @@ const server = http.createServer(async (req, res) => {
         .map((attempt) => attempt.requestId === requestId
           ? { ...attempt, status: 'completed', completedAt: new Date().toISOString(), response }
           : attempt);
-      updateConnectorSession(sessionId, { amazonSelectionIntelligenceAttempts: latestAttempts });
+      await completeAmazonSelectionIntelligenceAttempt(requestId, response);
+      updateConnectorSessionEphemeral(sessionId, { amazonSelectionIntelligenceAttempts: latestAttempts });
       if (pluginAuth.type === 'native_runner') {
         recordNativeRunnerActivity(pluginAuth.nativeRunnerDevice, {
           action: 'rank_public_candidates',

@@ -299,6 +299,36 @@ function runtimeMessageWithTimeout(page, message, timeoutMs = 3_000) {
 }
 
 function storefront(pathname, searchParams = new URLSearchParams()) {
+  const ambiguousPackageFixtures = [
+    { key: 'range', asin: 'B000PACK03', evidence: '<tr><th>Package Quantity</th><td>2-6</td></tr>' },
+    { key: 'alternatives', asin: 'B000PACK04', evidence: '<tr><th>Number of Items</th><td>2 or 6</td></tr>' },
+    { key: 'unknown', asin: 'B000PACK05', evidence: '<tr><th>Item Package Quantity</th><td>2</td></tr><tr><th>Number of Items</th><td>unknown</td></tr>' }
+  ];
+  const ambiguousSearch = ambiguousPackageFixtures.find((fixture) => pathname === `/selection-package-${fixture.key}-search`);
+  if (ambiguousSearch) {
+    return [
+      '<main><h1>Results for Nature Valley granola bars 2-pack</h1>',
+      `<div data-component-type="s-search-result" data-asin="${ambiguousSearch.asin}">`,
+      `<div data-cy="title-recipe"><h2>Nature Valley</h2><h2><a href="/dp/${ambiguousSearch.asin}">Nature Valley granola bars 2-pack</a></h2></div>`,
+      '<span class="a-price"><span class="a-offscreen">$6.95</span></span>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '</div>',
+      '</main>'
+    ].join('');
+  }
+  const ambiguousProduct = ambiguousPackageFixtures.find((fixture) => pathname === `/dp/${fixture.asin}`);
+  if (ambiguousProduct) {
+    return [
+      '<main><h1 id="productTitle">Nature Valley granola bars</h1>',
+      `<table id="productDetails_detailBullets_sections1">${ambiguousProduct.evidence}</table>`,
+      '<div id="corePrice_feature_div"><span class="a-offscreen">$6.95</span></div>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '<div id="deliveryBlockMessage">FREE delivery Tomorrow</div>',
+      '<div id="merchant-info">Ships from Amazon.com. Sold by Amazon.com.</div>',
+      `<input id="add-to-cart-button" type="submit" value="Add to Cart" onclick="sessionStorage.setItem('selection-package-${ambiguousProduct.key}-cart-click-count', String(Number(sessionStorage.getItem('selection-package-${ambiguousProduct.key}-cart-click-count') || 0) + 1))" />`,
+      '</main>'
+    ].join('');
+  }
   if (pathname === '/selection-intelligence-search') {
     const card = (asin, title, price) => [
       `<div data-component-type="s-search-result" data-asin="${asin}">`,
@@ -331,6 +361,85 @@ function storefront(pathname, searchParams = new URLSearchParams()) {
       card('B000PEANUT', 'Nature Valley', 'Nature Valley Peanut Butter Granola Bars', '3.50'),
       card('B000STRAWB', 'Great Value', 'Great Value Strawberry Granola Bars', '3.25'),
       '<a id="nav-cart" href="/cart"><span id="nav-cart-count">0</span> Cart</a>',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/selection-provisional-search') {
+    return [
+      '<main><h1>Results for HERSHEY\'S S\'mores Kit Box, 14 oz</h1>',
+      '<div data-component-type="s-search-result" data-asin="B000SMORE1">',
+      '<div data-cy="title-recipe"><h2>HERSHEY\'S</h2><h2><a href="/dp/B000SMORE1">mores Kit Box, 14 oz</a></h2></div>',
+      '<span class="a-price"><span class="a-offscreen">$6.95</span></span>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '</div>',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/selection-accessible-title-search') {
+    return [
+      '<main><h1>Results for HERSHEY\'S S\'mores Kit Box, 14 oz</h1>',
+      '<div data-component-type="s-search-result" data-asin="B000SMORE2">',
+      '<div data-cy="title-recipe"><h2>HERSHEY\'S</h2><h2><a href="/dp/B000SMORE2" aria-label="HERSHEY\'S S\'mores Kit Box, 14 oz">mores Kit Box, 14 oz</a></h2></div>',
+      '<span class="a-price"><span class="a-offscreen">$6.95</span></span>',
+      '<span aria-label="Amazon Prime">Prime delivery</span><span>FREE delivery Tomorrow</span>',
+      '<button onclick="sessionStorage.setItem(\'selection-accessible-title-click-count\', String(Number(sessionStorage.getItem(\'selection-accessible-title-click-count\') || 0) + 1))">Add to cart</button>',
+      '</div>',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/selection-package-mismatch-search') {
+    return [
+      '<main><h1>Results for HERSHEY\'S S\'mores Kit Box, 14 oz</h1>',
+      '<div data-component-type="s-search-result" data-asin="B000PACK01">',
+      '<div data-cy="title-recipe"><h2>HERSHEY\'S</h2><h2><a href="/dp/B000PACK01">HERSHEY\'S S\'mores Kit Box, 14 oz</a></h2></div>',
+      '<span class="a-price"><span class="a-offscreen">$6.95</span></span>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '</div>',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/selection-pack-count-mismatch-search') {
+    return [
+      '<main><h1>Results for Nature Valley granola bars 2-pack</h1>',
+      '<div data-component-type="s-search-result" data-asin="B000PACK02">',
+      '<div data-cy="title-recipe"><h2>Nature Valley</h2><h2><a href="/dp/B000PACK02">Nature Valley granola bars 2-pack</a></h2></div>',
+      '<span class="a-price"><span class="a-offscreen">$6.95</span></span>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '</div>',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/dp/B000SMORE1') {
+    return [
+      '<main><h1 id="productTitle">HERSHEY\'S S\'mores Kit Box, 14 oz</h1>',
+      '<div id="corePrice_feature_div"><span class="a-offscreen">$6.95</span></div>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '<div id="deliveryBlockMessage">FREE delivery Tomorrow</div>',
+      '<div id="merchant-info">Ships from Amazon.com. Sold by Amazon.com.</div>',
+      '<input id="add-to-cart-button" type="submit" value="Add to Cart" onclick="sessionStorage.setItem(\'selection-provisional-cart-click-count\', String(Number(sessionStorage.getItem(\'selection-provisional-cart-click-count\') || 0) + 1))" />',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/dp/B000PACK01') {
+    return [
+      '<main><h1 id="productTitle">HERSHEY\'S S\'mores Kit Box, 14 oz</h1>',
+      '<table id="productDetails_detailBullets_sections1"><tr><th>Number of Items</th><td>2</td></tr></table>',
+      '<div id="corePrice_feature_div"><span class="a-offscreen">$6.95</span></div>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '<div id="deliveryBlockMessage">FREE delivery Tomorrow</div>',
+      '<div id="merchant-info">Ships from Amazon.com. Sold by Amazon.com.</div>',
+      '<input id="add-to-cart-button" type="submit" value="Add to Cart" onclick="sessionStorage.setItem(\'selection-package-mismatch-cart-click-count\', String(Number(sessionStorage.getItem(\'selection-package-mismatch-cart-click-count\') || 0) + 1))" />',
+      '</main>'
+    ].join('');
+  }
+  if (pathname === '/dp/B000PACK02') {
+    return [
+      '<main><h1 id="productTitle">Nature Valley granola bars 6-pack</h1>',
+      '<div id="corePrice_feature_div"><span class="a-offscreen">$6.95</span></div>',
+      '<span aria-label="Amazon Prime">Prime delivery</span>',
+      '<div id="deliveryBlockMessage">FREE delivery Tomorrow</div>',
+      '<div id="merchant-info">Ships from Amazon.com. Sold by Amazon.com.</div>',
+      '<input id="add-to-cart-button" type="submit" value="Add to Cart" onclick="sessionStorage.setItem(\'selection-pack-count-mismatch-cart-click-count\', String(Number(sessionStorage.getItem(\'selection-pack-count-mismatch-cart-click-count\') || 0) + 1))" />',
       '</main>'
     ].join('');
   }
@@ -1369,7 +1478,7 @@ async function main() {
       throw error;
     });
     console.log(`native-runner browser smoke paired (${smokeMode})`);
-    const prepareSelectionOnlySession = async (pathname, { goal = 'buy test gadget', selectionIntelligence = null } = {}) => {
+    const prepareSelectionOnlySession = async (pathname, { goal = 'buy test gadget', budget = '$4', selectionIntelligence = null } = {}) => {
       checkpoints.length = 0;
       fulfillment = null;
       transientRunnerStatusFailures = 0;
@@ -1382,7 +1491,7 @@ async function main() {
         selections: {
           targetUrl,
           goal,
-          budget: '$4',
+          budget,
           finalApprovalPolicy: 'auto_submit_after_verified_checkout'
         },
         extensionCheckoutProfileEnabled: false,
@@ -1551,6 +1660,157 @@ async function main() {
         additionalRankRequests: selectionRankRequestCount - rankRequestsBeforeExplicitIdentity
       });
       await explicitIdentityPage.close();
+      const rankRequestsBeforeAccessibleTitle = selectionRankRequestCount;
+      const { merchantPage: accessibleTitlePage } = await prepareSelectionOnlySession('/selection-accessible-title-search', {
+        goal: "buy S'mores Kit Box, 14 oz HERSHEY'S",
+        budget: '$8',
+        selectionIntelligence: { enabled: true, maxCandidates: 12, timeoutMs: 3000 }
+      });
+      const accessibleTitleWake = await runSelectionFocus('browser-smoke-selection-accessible-title');
+      const accessibleTitleClicks = Number(await accessibleTitlePage.evaluate(() => sessionStorage.getItem('selection-accessible-title-click-count') || '0'));
+      const accessibleTitleCheckpoint = checkpoints.find((checkpoint) => checkpoint.planActionId === 'select-match'
+        && checkpoint.planActionStatus !== 'waiting');
+      if (accessibleTitleCheckpoint?.browser?.runnerStep?.selectionKind !== 'exact'
+        || accessibleTitleCheckpoint?.browser?.runnerStep?.directSearchResultCart !== true
+        || selectionRankRequestCount !== rankRequestsBeforeAccessibleTitle) {
+        fail(`browser_extension_accessible_title_recovery_failed:${JSON.stringify({
+          accessibleTitleCheckpoint,
+          accessibleTitleClicks,
+          selectionRankRequestCount,
+          rankRequestsBeforeAccessibleTitle,
+          accessibleTitleWake
+        })}`);
+      }
+      recordPurchaseScenario('A complete card-bound accessible title preserves the exact no-model fast path', {
+        directSearchResultCart: accessibleTitleCheckpoint.browser.runnerStep.directSearchResultCart,
+        additionalRankRequests: selectionRankRequestCount - rankRequestsBeforeAccessibleTitle
+      });
+      await accessibleTitlePage.close();
+      const rankRequestsBeforeProvisionalTitle = selectionRankRequestCount;
+      const { merchantPage: provisionalTitlePage } = await prepareSelectionOnlySession('/selection-provisional-search', {
+        goal: "buy HERSHEY'S S'mores Kit Box, 14 oz",
+        budget: '$8',
+        selectionIntelligence: { enabled: true, maxCandidates: 12, timeoutMs: 3000 }
+      });
+      const provisionalTitleWake = await runSelectionFocus('browser-smoke-selection-provisional-title');
+      const provisionalTitleCheckpoint = checkpoints.find((checkpoint) => checkpoint.planActionId === 'select-match'
+        && checkpoint.planActionStatus !== 'waiting');
+      const provisionalCartClicks = Number(await provisionalTitlePage.evaluate(() => sessionStorage.getItem('selection-provisional-cart-click-count') || '0'));
+      if (provisionalTitleCheckpoint?.browser?.runnerStep?.selectionKind !== 'model_assisted_product_page_verification'
+        || provisionalTitleCheckpoint?.browser?.runnerStep?.productPageVerified !== true
+        || provisionalTitleCheckpoint?.browser?.runnerStep?.productIdentityVerified !== true
+        || selectionRankRequestCount !== rankRequestsBeforeProvisionalTitle + 1
+        || provisionalCartClicks !== 0) {
+        fail(`browser_extension_provisional_title_verification_failed:${JSON.stringify({
+          provisionalTitleCheckpoint,
+          lastCheckpoint: checkpoints.at(-1),
+          provisionalCartClicks,
+          selectionRankRequestCount,
+          rankRequestsBeforeProvisionalTitle,
+          provisionalTitleWake
+        })}`);
+      }
+      recordPurchaseScenario('A clipped observed title gets one model ranking and one read-only product-page verification', {
+        cartClicks: provisionalCartClicks,
+        rankRequests: selectionRankRequestCount - rankRequestsBeforeProvisionalTitle,
+        productPageVerified: provisionalTitleCheckpoint.browser.runnerStep.productPageVerified
+      });
+      await provisionalTitlePage.close();
+      const rankRequestsBeforePackageMismatch = selectionRankRequestCount;
+      const { merchantPage: packageMismatchPage } = await prepareSelectionOnlySession('/selection-package-mismatch-search', {
+        goal: "buy HERSHEY'S S'mores Kit Box, 14 oz",
+        budget: '$8',
+        selectionIntelligence: { enabled: true, maxCandidates: 12, timeoutMs: 3000 }
+      });
+      const packageMismatchWake = await runSelectionFocus('browser-smoke-selection-package-mismatch');
+      const packageMismatchCheckpoint = checkpoints.find((checkpoint) => checkpoint.planActionId === 'select-match'
+        && checkpoint.browser?.runnerStep?.actionId === 'select-match');
+      const packageMismatchCartClicks = Number(await packageMismatchPage.evaluate(() => sessionStorage.getItem('selection-package-mismatch-cart-click-count') || '0'));
+      if (packageMismatchCheckpoint?.planActionStatus !== 'waiting'
+        || packageMismatchCheckpoint?.browser?.runnerStep?.productPageVerified !== false
+        || packageMismatchCheckpoint?.browser?.runnerStep?.productIdentityVerified !== false
+        || packageMismatchCheckpoint?.verifiedMilestones?.includes('candidate_selected')
+        || selectionRankRequestCount !== rankRequestsBeforePackageMismatch
+        || packageMismatchCartClicks !== 0) {
+        fail(`browser_extension_product_page_package_mismatch_advanced:${JSON.stringify({
+          packageMismatchCheckpoint,
+          packageMismatchCartClicks,
+          selectionRankRequestCount,
+          rankRequestsBeforePackageMismatch,
+          packageMismatchWake
+        })}`);
+      }
+      recordPurchaseScenario('Structured product-page item count blocks an unrequested multipack', {
+        cartClicks: packageMismatchCartClicks,
+        additionalRankRequests: selectionRankRequestCount - rankRequestsBeforePackageMismatch,
+        checkpointStatus: packageMismatchCheckpoint.planActionStatus
+      });
+      await packageMismatchPage.close();
+      const rankRequestsBeforePackCountMismatch = selectionRankRequestCount;
+      const { merchantPage: packCountMismatchPage } = await prepareSelectionOnlySession('/selection-pack-count-mismatch-search', {
+        goal: 'buy Nature Valley granola bars 2-pack',
+        budget: '$8',
+        selectionIntelligence: { enabled: true, maxCandidates: 12, timeoutMs: 3000 }
+      });
+      const packCountMismatchWake = await runSelectionFocus('browser-smoke-selection-pack-count-mismatch');
+      const packCountMismatchCheckpoint = checkpoints.find((checkpoint) => checkpoint.planActionId === 'select-match'
+        && checkpoint.browser?.runnerStep?.actionId === 'select-match');
+      const packCountMismatchCartClicks = Number(await packCountMismatchPage.evaluate(() => sessionStorage.getItem('selection-pack-count-mismatch-cart-click-count') || '0'));
+      if (packCountMismatchCheckpoint?.planActionStatus !== 'waiting'
+        || packCountMismatchCheckpoint?.browser?.runnerStep?.productPageVerified !== false
+        || packCountMismatchCheckpoint?.browser?.runnerStep?.productIdentityVerified !== false
+        || packCountMismatchCheckpoint?.verifiedMilestones?.includes('candidate_selected')
+        || selectionRankRequestCount !== rankRequestsBeforePackCountMismatch
+        || packCountMismatchCartClicks !== 0) {
+        fail(`browser_extension_product_page_pack_count_mismatch_advanced:${JSON.stringify({
+          packCountMismatchCheckpoint,
+          packCountMismatchCartClicks,
+          selectionRankRequestCount,
+          rankRequestsBeforePackCountMismatch,
+          packCountMismatchWake
+        })}`);
+      }
+      recordPurchaseScenario('Explicit product-page pack count must match the requested pack count', {
+        cartClicks: packCountMismatchCartClicks,
+        additionalRankRequests: selectionRankRequestCount - rankRequestsBeforePackCountMismatch,
+        checkpointStatus: packCountMismatchCheckpoint.planActionStatus
+      });
+      await packCountMismatchPage.close();
+      for (const packageFixture of ['range', 'alternatives', 'unknown']) {
+        const rankRequestsBeforeAmbiguousPackage = selectionRankRequestCount;
+        const { merchantPage: ambiguousPackagePage } = await prepareSelectionOnlySession(`/selection-package-${packageFixture}-search`, {
+          goal: 'buy Nature Valley granola bars 2-pack',
+          budget: '$8',
+          selectionIntelligence: { enabled: true, maxCandidates: 12, timeoutMs: 3000 }
+        });
+        const ambiguousPackageWake = await runSelectionFocus(`browser-smoke-selection-package-${packageFixture}`);
+        const ambiguousPackageCheckpoint = checkpoints.find((checkpoint) => checkpoint.planActionId === 'select-match'
+          && checkpoint.browser?.runnerStep?.actionId === 'select-match');
+        const ambiguousPackageCartClicks = Number(await ambiguousPackagePage.evaluate((key) => (
+          sessionStorage.getItem(`selection-package-${key}-cart-click-count`) || '0'
+        ), packageFixture));
+        if (ambiguousPackageCheckpoint?.planActionStatus !== 'waiting'
+          || ambiguousPackageCheckpoint?.browser?.runnerStep?.productPageVerified !== false
+          || ambiguousPackageCheckpoint?.browser?.runnerStep?.productIdentityVerified !== false
+          || ambiguousPackageCheckpoint?.verifiedMilestones?.includes('candidate_selected')
+          || selectionRankRequestCount !== rankRequestsBeforeAmbiguousPackage
+          || ambiguousPackageCartClicks !== 0) {
+          fail(`browser_extension_ambiguous_product_package_advanced:${JSON.stringify({
+            packageFixture,
+            ambiguousPackageCheckpoint,
+            ambiguousPackageCartClicks,
+            selectionRankRequestCount,
+            rankRequestsBeforeAmbiguousPackage,
+            ambiguousPackageWake
+          })}`);
+        }
+        recordPurchaseScenario(`Ambiguous structured package evidence fails closed (${packageFixture})`, {
+          cartClicks: ambiguousPackageCartClicks,
+          additionalRankRequests: selectionRankRequestCount - rankRequestsBeforeAmbiguousPackage,
+          checkpointStatus: ambiguousPackageCheckpoint.planActionStatus
+        });
+        await ambiguousPackagePage.close();
+      }
       console.log(JSON.stringify({ amazonPurchaseSimulations: purchaseScenarioResults.length, scenarios: purchaseScenarioResults }, null, 2));
       console.log('native-runner selection intelligence smoke passed');
       return;

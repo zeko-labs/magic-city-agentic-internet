@@ -265,6 +265,56 @@ try {
 
   await worker.evaluate(({ tabId, html }) => globalThis.setSelectionFixture(tabId, html), {
     tabId: regressionTab,
+    html: cardHtml('B000FRUIT3', 'Nature Valley Blueberry Granola Bars') + semanticCards
+  });
+  await page.evaluate(() => { globalThis.__selectionGuard.clicks = 0; });
+  output.selectionIntelligenceReorderedFixture = await worker.evaluate(({ tabId, approved }) => globalThis.runSelectionAction(tabId, {
+    type: 'select_candidate',
+    query: 'fruity Nature Valley granola bars',
+    maxPrice: 6,
+    primeRequired: false,
+    intelligenceApprovedCandidate: approved
+  }), { tabId: regressionTab, approved: approvedSemanticCandidate });
+  intelligenceGuard = await page.evaluate(() => globalThis.__selectionGuard);
+  assert.equal(output.selectionIntelligenceReorderedFixture?.selectionKind, 'model_assisted', 'card reordering does not detach advice from its ASIN');
+  assert.equal(output.selectionIntelligenceReorderedFixture?.selected?.asin, approvedSemanticCandidate.asin, 'reordered advice remains bound to the approved ASIN');
+  assert.equal(intelligenceGuard.clicks, 1, 'reordered advice clicks only the approved ASIN');
+
+  const hydrationCard = (delivery = '') => `
+    <div data-component-type="s-search-result" data-asin="B000HYDRAT" style="display:block;width:600px;min-height:160px">
+      <div data-cy="title-recipe"><h2><a href="/dp/B000HYDRAT">Nature Valley Trail Mix Chewy Fruit & Nut Granola Bar, 6 ct, 7.4 oz</a></h2></div>
+      <span class="a-price"><span class="a-offscreen">$5.00</span></span>
+      ${delivery}
+    </div>`;
+  await worker.evaluate(({ tabId, html }) => globalThis.setSelectionFixture(tabId, html), {
+    tabId: regressionTab,
+    html: hydrationCard('')
+  });
+  const hydrationInitial = await worker.evaluate(({ tabId }) => globalThis.runSelectionShadow(tabId, {
+    type: 'select_candidate', query: 'fruity Nature Valley granola bars', maxPrice: 6, primeRequired: true
+  }), { tabId: regressionTab });
+  const hydrationApproved = hydrationInitial?.intelligenceCandidates?.[0];
+  assert.equal(hydrationApproved?.requiresProductPageVerification, true, 'inconclusive fulfillment requires product-page verification');
+  await worker.evaluate(({ tabId, html }) => globalThis.setSelectionFixture(tabId, html), {
+    tabId: regressionTab,
+    html: hydrationCard('<span aria-label="Amazon Prime">Prime delivery</span><span>FREE delivery on $35 of qualifying items</span>')
+  });
+  output.selectionIntelligenceHydrationFixture = await worker.evaluate(({ tabId, approved }) => globalThis.runSelectionShadow(tabId, {
+    type: 'select_candidate',
+    query: 'fruity Nature Valley granola bars',
+    maxPrice: 6,
+    primeRequired: true,
+    intelligenceApprovedCandidate: approved
+  }), { tabId: regressionTab, approved: hydrationApproved });
+  assert.equal(
+    output.selectionIntelligenceHydrationFixture?.selectionKind,
+    'model_assisted_product_page_verification',
+    'hydrated delivery evidence advances only to bounded product-page verification'
+  );
+  assert.equal(output.selectionIntelligenceHydrationFixture?.selected?.asin, hydrationApproved.asin, 'hydration remains bound to the approved ASIN');
+
+  await worker.evaluate(({ tabId, html }) => globalThis.setSelectionFixture(tabId, html), {
+    tabId: regressionTab,
     html: semanticCards.replace('$5.00', '$5.50')
   });
   await page.evaluate(() => { globalThis.__selectionGuard.clicks = 0; });

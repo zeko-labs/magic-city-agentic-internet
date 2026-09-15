@@ -1950,6 +1950,41 @@
     return amounts.length === 1 ? amounts[0] : null;
   }
 
+  function visibleProductTitle() {
+    const selectors = [
+      '#productTitle',
+      '#title',
+      '[data-feature-name="title"] h1',
+      '[data-testid="product-title"]',
+      'main h1'
+    ];
+    const candidates = [...new Set(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))))]
+      .filter((node) => visible(node) || Array.from(node.querySelectorAll?.('*') || []).some(visible))
+      .flatMap((node) => [node.getAttribute?.('aria-label'), node.getAttribute?.('title'), node.innerText, node.textContent])
+      .map(canonicalProductTitle)
+      .filter(Boolean)
+      .sort((a, b) => normalizeMatchText(b).length - normalizeMatchText(a).length);
+    return candidates[0] || '';
+  }
+
+  function visibleProductPackageEvidence() {
+    const selectors = [
+      '#variation_size_name .selection',
+      '#variation_size_name [aria-selected="true"]',
+      '#variation_package_quantity .selection',
+      '#variation_number_of_items .selection',
+      '#detailBullets_feature_div li',
+      '#productDetails_detailBullets_sections1 tr',
+      '#productDetails_techSpec_section_1 tr'
+    ];
+    const packagePattern = /\b(?:size|unit count|number of items|item weight|package|volume|\d+(?:\.\d+)?\s*(?:fl\.?\s*oz|fluid ounces?|oz|ounces?|sq\.?\s*ft|qt|quarts?|l|liters?|litres?|ct|count|bars?|bags?|packets?|sticks?|pods?|refills?|pairs?|pads?|sheets?|pieces?|rolls?|boxes?)|pack of\s+\d+|\d+[ -]+pack)\b/i;
+    const values = [...new Set(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))))]
+      .filter((node) => visible(node) || Array.from(node.querySelectorAll?.('*') || []).some(visible))
+      .map((node) => compactText(node.innerText || node.textContent, 400))
+      .filter((value) => value && packagePattern.test(value));
+    return compactText(values.join(' | '), 2200);
+  }
+
   function deliveryCostEvidenceFromText(value = '') {
     const text = String(value || '');
     const explicitPrice = text.match(/\b(?:shipping(?:\s*&\s*handling)?|delivery)(?:\s+(?:fee|cost|charge))?\s*[:\-]?\s*\$\s*(\d{1,4}(?:\.\d{2})?)/i)
@@ -2516,6 +2551,8 @@
     const productDelivery = classification.surface === 'product'
       ? visibleProductDeliveryEvidence(rawPageText)
       : { known: false, price: null, kind: 'unknown' };
+    const productTitle = classification.surface === 'product' ? visibleProductTitle() : '';
+    const productPackageEvidence = classification.surface === 'product' ? visibleProductPackageEvidence() : '';
     const productFulfillment = classification.surface === 'product'
       ? visibleProductFulfillmentEvidence(rawPageText)
       : { primeEligible: false, freeShipping: false, explicitlyPaid: false, eligible: false };
@@ -2648,6 +2685,8 @@
         : '',
       shippingTotalEvidence,
       productPrice: totalEvidence.kind === 'product_price' && Number.isFinite(totalEvidence.amount) ? `$${totalEvidence.amount.toFixed(2)}` : '',
+      productTitle,
+      productPackageEvidence,
       productShippingKnown: productDelivery.known,
       productShippingPrice: productDelivery.known && Number.isFinite(productDelivery.price) ? `$${productDelivery.price.toFixed(2)}` : '',
       productDeliveredPrice: Number.isFinite(productDeliveredAmount) ? `$${productDeliveredAmount.toFixed(2)}` : '',

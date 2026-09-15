@@ -46,6 +46,7 @@
     "test:native-runner-same-window-focus": "MAGIC_CITY_BROWSER_SMOKE_FOCUS=same-window-focus node scripts/smoke-native-runner-extension-browser.mjs",
     "test:native-runner-liveness-fast-path": "node scripts/test-native-runner-liveness-fast-path.mjs",
     "test:amazon-selection-intelligence-provider": "node scripts/test-amazon-selection-intelligence-provider.mjs",
+    "test:amazon-selection-intelligence-revalidation": "node scripts/test-amazon-selection-intelligence-revalidation.mjs",
     "test:native-runner-extension-pairing": "node scripts/test-native-runner-extension-pairing.mjs",
     "test:native-runner-store-version": "node scripts/test-native-runner-store-version-discovery.mjs",
     "test:browser-affiliate-safety": "node scripts/test-browser-affiliate-safety.mjs",
