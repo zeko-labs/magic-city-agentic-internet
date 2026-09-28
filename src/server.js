@@ -7287,9 +7287,64 @@ function isChromeExtensionRunnerRequest(req) {
   return String(req.headers['x-magic-city-runner-surface'] || '').trim().toLowerCase() === 'chrome-extension';
 }
 
-function isChromeExtensionDeclarativeRunnerRequest(req) {
-  return isChromeExtensionRunnerRequest(req) &&
-    String(req.headers['x-magic-city-runner-protocol'] || '').trim().toLowerCase() === BROWSER_EXTENSION_PLAN_PROTOCOL;
+function requiredExecutionProtocolForSession(session = null) {
+  const persisted = session?.executionProtocol;
+  if (persisted !== null && persisted !== undefined) {
+    if (typeof persisted !== 'object' || Array.isArray(persisted)) {
+      throw createHttpError('execution_protocol_unsupported', 409);
+    }
+    const schema = String(persisted.schema || '').trim();
+    const protocol = String(persisted.protocol || '').trim().toLowerCase();
+    const pluginId = String(persisted.pluginId || '').trim();
+    const planHash = String(persisted.planHash || '').trim();
+    if (schema !== 'magic-city-execution-protocol-v1'
+      || persisted.required !== true
+      || protocol !== BROWSER_EXTENSION_PLAN_PROTOCOL
+      || !isDeclarativeExtensionExecutionAgentId(pluginId)
+      || !planHash
+      || (session?.extensionMissionPlan?.planHash && session.extensionMissionPlan.planHash !== planHash)) {
+      throw createHttpError('execution_protocol_unsupported', 409);
+    }
+    return protocol;
+  }
+  // Sessions created before executionProtocol was persisted still carry both
+  // the selected declarative executor and its signed plan.
+  const selectedDeclarativeBrowserExecutor = String(session?.handoffData?.kind || '').trim() === 'browser'
+    && (isDeclarativeExtensionExecutionAgentId(session?.claimedByPluginId)
+      || isDeclarativeExtensionExecutionAgentId(session?.preferredExecutionAgentId));
+  if (selectedDeclarativeBrowserExecutor || isExtensionRunnerSession(session)) {
+    return BROWSER_EXTENSION_PLAN_PROTOCOL;
+  }
+  return null;
+}
+
+function enforceAuthenticatedExecutionProtocol(req, { session = null, pluginAuth = null, pluginId = '' } = {}) {
+  const requiredProtocol = requiredExecutionProtocolForSession(session);
+  const suppliedSurface = String(req.headers['x-magic-city-runner-surface'] || '').trim().toLowerCase();
+  const suppliedProtocol = String(req.headers['x-magic-city-runner-protocol'] || '').trim().toLowerCase();
+  if (!requiredProtocol) {
+    if (suppliedProtocol || suppliedSurface === 'chrome-extension') {
+      throw createHttpError('execution_protocol_not_allowed', 409);
+    }
+    return null;
+  }
+  if (pluginAuth?.type !== 'native_runner' || !pluginAuth.nativeRunnerDevice?.id) {
+    throw createHttpError('native_runner_required_for_extension_protocol', 403);
+  }
+  const persistedPluginId = String(session?.executionProtocol?.pluginId || '').trim();
+  if (persistedPluginId && String(pluginId || '').trim() !== persistedPluginId) {
+    throw createHttpError('execution_protocol_agent_mismatch', 409);
+  }
+  if (!isDeclarativeExtensionExecutionAgentId(pluginId || session?.claimedByPluginId || session?.preferredExecutionAgentId)) {
+    throw createHttpError('execution_protocol_agent_mismatch', 409);
+  }
+  if (suppliedSurface && suppliedSurface !== 'chrome-extension') {
+    throw createHttpError('execution_protocol_surface_mismatch', 409);
+  }
+  if (suppliedProtocol && suppliedProtocol !== requiredProtocol) {
+    throw createHttpError('execution_protocol_unsupported', 409);
+  }
+  return requiredProtocol;
 }
 
 function isAuthenticatedChromeExtensionRunnerMutation(req, urlPath = '') {
@@ -7692,8 +7747,9 @@ function formatConnectorSessionForExtension(session = null) {
   };
 }
 
-function formatConnectorSessionForRunnerResponse(req, session, pluginId = '') {
-  if (isChromeExtensionRunnerRequest(req) && isDeclarativeExtensionExecutionAgentId(pluginId || session?.preferredExecutionAgentId)) {
+function formatConnectorSessionForRunnerResponse(_req, session, pluginId = '') {
+  if (requiredExecutionProtocolForSession(session)
+    && isDeclarativeExtensionExecutionAgentId(pluginId || session?.claimedByPluginId || session?.preferredExecutionAgentId)) {
     return formatConnectorSessionForExtension(session);
   }
   return session;
@@ -17478,12 +17534,9 @@ const server = http.createServer(async (req, res) => {
         // claim. The dispatch is consumed at claim time, so filtering only on the
         // short pre-claim authorization window strands a mission if the MV3 worker
         // pauses between browser steps.
-        if (isChromeExtensionRunnerRequest(req)) {
-          sessions = sessions.filter((session) =>
-            hasActiveExtensionRunDispatch(session)
-            || isActiveExtensionClaimForDevice(session, nativeRunnerDevice)
-          );
-        }
+        sessions = sessions.filter((session) => !requiredExecutionProtocolForSession(session)
+          || hasActiveExtensionRunDispatch(session)
+          || isActiveExtensionClaimForDevice(session, nativeRunnerDevice));
         const reportedExtensionVersion = String(req.headers['x-magic-city-runner-extension-version'] || '').trim().slice(0, 64);
         const reportedExtensionId = String(req.headers['x-magic-city-runner-extension-id'] || '').trim().slice(0, 128);
         const metadataPatch = (isChromeExtensionRunnerRequest(req) && (reportedExtensionVersion || reportedExtensionId))
@@ -17520,9 +17573,9 @@ const server = http.createServer(async (req, res) => {
         nativeRunnerRequestTiming?.mark('responseReady', { queueCount: sessions.length });
         const sendPollResponse = watchdogMutated ? sendJson : sendAdvisoryJson;
         return sendPollResponse(res, 200, {
-          sessions: isChromeExtensionRunnerRequest(req)
-            ? sessions.map((session) => formatConnectorSessionForExtension(session))
-            : sessions
+          sessions: sessions.map((session) => requiredExecutionProtocolForSession(session)
+            ? formatConnectorSessionForExtension(session)
+            : session)
         });
       }
       const auth = getAuthenticatedContext(req);
@@ -20397,6 +20450,15 @@ const server = http.createServer(async (req, res) => {
             ? initialBrowserExtensionPlanState(extensionPlanForRun)
             : getExtensionMissionPlanStateForSession(session, extensionPlanForRun))
           : (resetExpiredBrowserMission ? null : session.extensionMissionPlanState ?? null),
+        executionProtocol: isBrowserSession && isDeclarativeExtensionExecutionAgentId(selectedExecutionAgentIdForRun)
+          ? {
+              schema: 'magic-city-execution-protocol-v1',
+              protocol: BROWSER_EXTENSION_PLAN_PROTOCOL,
+              required: true,
+              pluginId: selectedExecutionAgentIdForRun,
+              planHash: extensionPlanForRun?.planHash || session.extensionMissionPlan?.planHash || null
+            }
+          : null,
         extensionFinalSubmitResume: finalSubmitResumeRequested,
         extensionCheckoutReconcileResume: checkoutReconcileResumeRequested,
         extensionCheckoutReconcileUrl: checkoutReconcileResumeRequested ? checkoutReconcileUrl : null,
@@ -20482,6 +20544,7 @@ const server = http.createServer(async (req, res) => {
         missionRuntimeHolder: nextSessionState.missionRuntimeHolder,
         extensionMissionPlan: nextSessionState.extensionMissionPlan,
         extensionMissionPlanState: nextSessionState.extensionMissionPlanState,
+        executionProtocol: nextSessionState.executionProtocol,
         extensionFinalSubmitResume: nextSessionState.extensionFinalSubmitResume,
         extensionCheckoutReconcileResume: nextSessionState.extensionCheckoutReconcileResume,
         extensionCheckoutReconcileUrl: nextSessionState.extensionCheckoutReconcileUrl,
@@ -20774,6 +20837,11 @@ const server = http.createServer(async (req, res) => {
       if (!canExecutionPluginActForPreferredAgent({ session, pluginId: body.pluginId })) {
         return sendJson(res, 409, { error: 'checkpoint_agent_mismatch', preferredExecutionAgentId: session.preferredExecutionAgentId });
       }
+      const declarativeExtensionCheckpoint = Boolean(enforceAuthenticatedExecutionProtocol(req, {
+        session,
+        pluginAuth,
+        pluginId: body.pluginId
+      }));
       const browser = body.browser
         ? sanitizeExecutionPreviewMetadata(sanitizeMetadata(body.browser))
         : null;
@@ -20782,7 +20850,7 @@ const server = http.createServer(async (req, res) => {
         : null;
       const missionAction = String(body.missionAction || body.action || '').trim()
         || (browser?.url || browser?.currentUrl ? 'read_public_page' : 'inspect');
-      const checkpointRequestHash = isChromeExtensionDeclarativeRunnerRequest(req)
+      const checkpointRequestHash = declarativeExtensionCheckpoint
         ? extensionCheckpointRequestHash(body, { browser, runnerTiming, missionAction })
         : null;
       if (isExactExtensionCheckpointReplay(session, checkpointRequestHash)) {
@@ -20793,7 +20861,7 @@ const server = http.createServer(async (req, res) => {
           session: formatConnectorSessionForRunnerResponse(req, session, body.pluginId)
         });
       }
-      const extensionPlan = isChromeExtensionDeclarativeRunnerRequest(req)
+      const extensionPlan = declarativeExtensionCheckpoint
         ? enforceExtensionMissionPlanStep(session, body, missionAction)
         : null;
       const retailCheckoutStep = extensionPlan && isRetailCheckoutMission(session)
@@ -20915,12 +20983,12 @@ const server = http.createServer(async (req, res) => {
       if (!session) return notFound(res);
       const body = await readBody(req);
       requireFields(body, ['pluginId', 'planHash', 'planActionId', 'requestId', 'observationHash', 'candidates']);
-      if (!isChromeExtensionDeclarativeRunnerRequest(req)) {
-        throw createHttpError('amazon_candidate_ranker_extension_only', 403);
-      }
       const pluginAuth = requirePluginApiKeyOrNativeRunner(req, { body, session, pluginId: body.pluginId, advisory: true });
       if (!canExecutionPluginActForPreferredAgent({ session, pluginId: body.pluginId })) {
         return sendJson(res, 409, { error: 'candidate_ranker_agent_mismatch', preferredExecutionAgentId: session.preferredExecutionAgentId });
+      }
+      if (!enforceAuthenticatedExecutionProtocol(req, { session, pluginAuth, pluginId: body.pluginId })) {
+        throw createHttpError('amazon_candidate_ranker_extension_only', 403);
       }
       if (!AMAZON_SELECTION_INTELLIGENCE_ENABLED || !isAmazonCandidateRankerConfigured()) {
         return sendAdvisoryJson(res, 200, {
@@ -21128,7 +21196,6 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         nativeRunnerRequestTiming?.mark('bodyRead');
         requireFields(body, ['pluginId']);
-        const declarativeExtensionClaim = isChromeExtensionDeclarativeRunnerRequest(req);
         const pluginAuth = requirePluginApiKeyOrNativeRunner(req, { body, session, pluginId: body.pluginId });
         nativeRunnerRequestTiming?.mark('authenticated');
         const plugin = getPluginRegistration(body.pluginId);
@@ -21150,10 +21217,12 @@ const server = http.createServer(async (req, res) => {
         }));
           return sendJson(res, 409, { error: 'preferred_execution_agent_mismatch', preferredExecutionAgentId: session.preferredExecutionAgentId });
         }
+        const declarativeExtensionClaim = Boolean(enforceAuthenticatedExecutionProtocol(req, {
+          session,
+          pluginAuth,
+          pluginId: plugin.pluginId
+        }));
         if (declarativeExtensionClaim) {
-          if (pluginAuth.type !== 'native_runner' || !pluginAuth.nativeRunnerDevice?.id) {
-            return sendJson(res, 403, { error: 'native_runner_required_for_extension_claim' });
-          }
           if (isActiveExtensionClaimForDevice(session, pluginAuth.nativeRunnerDevice)) {
             return sendJson(res, 200, {
               claimed: true,
@@ -21276,21 +21345,26 @@ const server = http.createServer(async (req, res) => {
       if (session.claimedByPluginId && session.claimedByPluginId !== plugin.pluginId) {
         return sendJson(res, 409, { error: 'session_claimed_by_other_plugin', claimedBy: session.claimedByPluginId });
       }
-      if (isChromeExtensionDeclarativeRunnerRequest(req)) {
+      const declarativeExtensionFulfillment = Boolean(enforceAuthenticatedExecutionProtocol(req, {
+        session,
+        pluginAuth,
+        pluginId: plugin.pluginId
+      }));
+      if (declarativeExtensionFulfillment) {
         const extensionMissionPlan = getExtensionMissionPlanForSession(session);
         if (!extensionMissionPlan?.planHash || String(body.planHash || '').trim() !== extensionMissionPlan.planHash) {
           return sendJson(res, 409, { error: 'extension_mission_plan_hash_mismatch' });
         }
       }
       const requestedFulfillmentStatus = body.status === 'failed' ? 'failed' : 'fulfilled';
-      const extensionFulfillmentEvaluation = isChromeExtensionDeclarativeRunnerRequest(req)
+      const extensionFulfillmentEvaluation = declarativeExtensionFulfillment
         ? evaluateBrowserExtensionFulfillment({ status: requestedFulfillmentStatus, result: body.result ?? {} })
         : null;
       const fulfillmentStatus = extensionFulfillmentEvaluation?.status || requestedFulfillmentStatus;
       // An Amazon confirmation is irreversible. A delayed retry can report a
       // stale checkout-picker state after the order is complete; it must not
       // downgrade the terminal session or release its proof trail.
-      if (isChromeExtensionDeclarativeRunnerRequest(req)
+      if (declarativeExtensionFulfillment
         && connectorSessionHasConfirmedBrowserOrder(session)
         && fulfillmentStatus === 'failed') {
         return sendJson(res, 200, {

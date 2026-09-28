@@ -596,6 +596,22 @@ async function main() {
     if (undispatchedClaim.response.status !== 409 || undispatchedClaim.data?.error !== 'extension_run_dispatch_required') {
       throw new Error(`undispatched_extension_claim_not_rejected:${undispatchedClaim.response.status}:${JSON.stringify(undispatchedClaim.data)}`);
     }
+    for (const [name, headers, expectedError] of [
+      ['headers_omitted', {}, 'extension_run_dispatch_required'],
+      ['surface_only', { runnerSurface: 'chrome-extension' }, 'extension_run_dispatch_required'],
+      ['protocol_only', { runnerProtocol: 'declarative-v1' }, 'extension_run_dispatch_required'],
+      ['unsupported_protocol', { runnerSurface: 'chrome-extension', runnerProtocol: 'legacy-v0' }, 'execution_protocol_unsupported']
+    ]) {
+      const downgradedClaim = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}/claim`, {
+        method: 'POST',
+        bearer: token,
+        ...headers,
+        body: { pluginId: 'magic-city-runner-extension' }
+      });
+      if (downgradedClaim.response.status !== 409 || downgradedClaim.data?.error !== expectedError) {
+        throw new Error(`extension_claim_protocol_downgrade_not_rejected:${name}:${downgradedClaim.response.status}:${JSON.stringify(downgradedClaim.data)}`);
+      }
+    }
     const executionStart = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}/start-execution`, {
       method: 'POST',
       cookie: auth.cookie,
@@ -603,6 +619,12 @@ async function main() {
     });
     if (!executionStart.response.ok || !executionStart.data.session?.extensionRunDispatch?.expiresAt) {
       throw new Error(`extension_dispatch_start_failed:${executionStart.response.status}:${JSON.stringify(executionStart.data)}`);
+    }
+    if (executionStart.data.session?.executionProtocol?.protocol !== 'declarative-v1'
+      || executionStart.data.session?.executionProtocol?.required !== true
+      || executionStart.data.session?.executionProtocol?.pluginId !== 'magic-city-runner-extension'
+      || executionStart.data.session?.executionProtocol?.planHash !== executionStart.data.session?.extensionMissionPlan?.planHash) {
+      throw new Error(`extension_execution_protocol_not_persisted:${JSON.stringify(executionStart.data.session?.executionProtocol || {})}`);
     }
     const dispatchedSessions = await request(baseUrl, '/connectors/sessions', {
       bearer: token,
@@ -663,6 +685,48 @@ async function main() {
     const extensionPlan = claimedSession.data.session?.extensionMissionPlan;
     if (!extensionPlan?.planHash || extensionPlan.actions?.[0]?.id !== 'open-site') {
       throw new Error(`extension_claim_missing_plan:${JSON.stringify(extensionPlan || {})}`);
+    }
+    for (const [name, headers, expectedError] of [
+      ['headers_omitted', {}, 'extension_mission_plan_hash_mismatch'],
+      ['surface_only', { runnerSurface: 'chrome-extension' }, 'extension_mission_plan_hash_mismatch'],
+      ['protocol_only', { runnerProtocol: 'declarative-v1' }, 'extension_mission_plan_hash_mismatch'],
+      ['unsupported_protocol', { runnerSurface: 'chrome-extension', runnerProtocol: 'legacy-v0' }, 'execution_protocol_unsupported']
+    ]) {
+      const checkpointWithoutPlan = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}/checkpoint`, {
+        method: 'POST',
+        bearer: token,
+        ...headers,
+        body: {
+          pluginId: 'magic-city-runner-extension',
+          label: 'Checkpoint without plan binding',
+          missionAction: 'browser_open',
+          targetUrl: 'https://www.amazon.com/s?k=nature+valley+granola+bars'
+        }
+      });
+      if (checkpointWithoutPlan.response.status !== 409 || checkpointWithoutPlan.data?.error !== expectedError) {
+        throw new Error(`extension_checkpoint_protocol_downgrade_not_rejected:${name}:${checkpointWithoutPlan.response.status}:${JSON.stringify(checkpointWithoutPlan.data)}`);
+      }
+    }
+    const headerlessEmptyFulfillment = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}/fulfill`, {
+      method: 'POST',
+      bearer: token,
+      body: {
+        pluginId: 'magic-city-runner-extension',
+        status: 'fulfilled',
+        result: {}
+      }
+    });
+    if (headerlessEmptyFulfillment.response.status !== 409
+      || headerlessEmptyFulfillment.data?.error !== 'extension_mission_plan_hash_mismatch') {
+      throw new Error(`headerless_extension_fulfillment_downgrade_not_rejected:${headerlessEmptyFulfillment.response.status}:${JSON.stringify(headerlessEmptyFulfillment.data)}`);
+    }
+    const afterDowngradeAttempts = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}`, {
+      cookie: auth.cookie
+    });
+    if (!afterDowngradeAttempts.response.ok
+      || afterDowngradeAttempts.data.session?.status === 'fulfilled'
+      || afterDowngradeAttempts.data.session?.creditReservation?.status === 'settled') {
+      throw new Error(`extension_protocol_downgrade_changed_terminal_or_credit_state:${JSON.stringify(afterDowngradeAttempts.data)}`);
     }
     const firstCheckpointStartedAt = Date.now();
     const permissionCheckpoint = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionId)}/checkpoint`, {
@@ -1175,6 +1239,9 @@ async function main() {
         state: 'permission_required',
         missionAction: 'browser_open',
         targetUrl: 'https://www.amazon.com/s?k=nature+valley+granola+bars',
+        planHash: legacyClaim.data.session?.extensionMissionPlan?.planHash,
+        planActionId: legacyClaim.data.session?.extensionMissionPlan?.actions?.[0]?.id,
+        planActionStatus: 'waiting',
         proofOfPossession: buildPopProof({
           keyPair: legacyHolderKey,
           session: legacyClaim.data.session,

@@ -240,8 +240,8 @@ async function main() {
         pluginId: 'local-authenticated-browser-plugin'
       }
     });
-    if (cookieBoundExtensionClaim.response.status !== 409 || cookieBoundExtensionClaim.data.error !== 'extension_run_dispatch_required') {
-      throw new Error(`cookie_bound_extension_claim_blocked_before_auth:${cookieBoundExtensionClaim.response.status}:${JSON.stringify(cookieBoundExtensionClaim.data)}`);
+    if (cookieBoundExtensionClaim.response.status !== 409 || cookieBoundExtensionClaim.data.error !== 'execution_protocol_not_allowed') {
+      throw new Error(`cookie_bound_extension_claim_protocol_conflict_not_rejected:${cookieBoundExtensionClaim.response.status}:${JSON.stringify(cookieBoundExtensionClaim.data)}`);
     }
 
     const claim = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionA.id)}/claim`, {

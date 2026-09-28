@@ -30,7 +30,7 @@ assert.equal(productionAdminAccount({ id: 'auth-2', email: 'admin@example.test',
 assert.equal(productionAdminAccount({ id: 'auth-1' }, { AUTH_ADMIN_USER_IDS: 'auth-1' }), true);
 
 const production = {
-  DEPLOYMENT_PROFILE: 'production', MAGIC_CITY_CANONICAL_ORIGIN: 'https://app.example',
+  NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'production', MAGIC_CITY_CANONICAL_ORIGIN: 'https://app.example',
   DATABASE_URL: 'postgres://test:unused@localhost/test', MAGIC_CITY_RATE_LIMIT_STORE: 'postgres',
   PUBLIC_API_KEYS: crypto.randomBytes(32).toString('hex'),
   MAGIC_CITY_REQUIRE_PRODUCTION_PERSISTENCE: 'true', MAGIC_CITY_REQUIRE_STATE_ENCRYPTION: 'true',
@@ -39,6 +39,16 @@ const production = {
 };
 for (const key of ['ADMIN_TOKEN', 'PRIVACY_SALT', 'MISSION_BOUND_AUTH_SECRET', 'MCP_OAUTH_SECRET', 'MAGIC_CITY_STATE_ENCRYPTION_KEY']) production[key] = crypto.randomBytes(32).toString('hex');
 validateDeployment(production);
+assert.throws(
+  () => validateDeployment({ ...production, DEPLOYMENT_PROFILE: '', NODE_ENV: 'production' }),
+  /production_requires_deployment_profile/
+);
+assert.throws(
+  () => validateDeployment({ ...production, DEPLOYMENT_PROFILE: 'development', NODE_ENV: 'production' }),
+  /production_deployment_profile_conflict/
+);
+validateDeployment({ NODE_ENV: 'development' });
+validateDeployment({ NODE_ENV: 'test' });
 const retainedConnectorKey = crypto.randomBytes(32).toString('hex');
 const transitionConfig = { ...production, GOOGLE_CONNECTOR_SECRET: retainedConnectorKey,
   MISSION_BOUND_AUTH_LEGACY_SECRET: retainedConnectorKey,

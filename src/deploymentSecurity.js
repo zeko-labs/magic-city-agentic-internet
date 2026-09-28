@@ -7,7 +7,7 @@ const enabled = (value) => String(value).toLowerCase() === 'true';
 const list = (value) => String(value || '').split(',').map((v) => v.trim()).filter(Boolean);
 
 export function deploymentIsProduction(env = process.env) {
-  return env.DEPLOYMENT_PROFILE === 'production';
+  return String(env.DEPLOYMENT_PROFILE || '').trim().toLowerCase() === 'production';
 }
 
 export function productionAdminAccount(authUser, env = process.env) {
@@ -34,7 +34,11 @@ export function validateDeployment(env = process.env) {
     if (!owners || Array.isArray(owners) || typeof owners !== 'object'
       || Object.entries(owners).some(([id, owner]) => !id.trim() || typeof owner !== 'string' || !owner.trim())) throw fail('invalid_plugin_owner_mapping');
   }
-  if (env.DEPLOYMENT_PROFILE && !['development', 'production'].includes(env.DEPLOYMENT_PROFILE)) throw fail('invalid_deployment_profile');
+  const deploymentProfile = String(env.DEPLOYMENT_PROFILE || '').trim().toLowerCase();
+  const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
+  if (deploymentProfile && !['development', 'production'].includes(deploymentProfile)) throw fail('invalid_deployment_profile');
+  if (nodeEnv === 'production' && !deploymentProfile) throw fail('production_requires_deployment_profile');
+  if (nodeEnv === 'production' && deploymentProfile !== 'production') throw fail('production_deployment_profile_conflict');
   const origin = canonicalOrigin(env);
   if (!deploymentIsProduction(env)) return;
   for (const name of ['ETHEREUM_CONFIRMATION_INDEXER_AUTO_CONFIRM', 'ETHEREUM_SHADOW_RELAYER_LIVE_EXECUTION']) {
