@@ -3716,6 +3716,44 @@
         .replace(/"/g, '&quot;');
     }
 
+    function safeExecutionPreviewUrl(value) {
+      const raw = String(value || '').trim();
+      if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+      try {
+        const parsed = new URL(raw, window.location.origin);
+        if (parsed.username || parsed.password) return '';
+        if (parsed.origin === window.location.origin) {
+          return parsed.pathname.startsWith('/artifacts/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : '';
+        }
+        return parsed.protocol === 'https:' ? parsed.href : '';
+      } catch {
+        return '';
+      }
+    }
+
+    function renderExecutionPreviewLink(value, {
+      className = '',
+      label = '',
+      imageAlt = ''
+    } = {}) {
+      const url = safeExecutionPreviewUrl(value);
+      if (!url) return '';
+      const anchor = document.createElement('a');
+      anchor.className = className;
+      anchor.setAttribute('href', url);
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+      if (imageAlt) {
+        const image = document.createElement('img');
+        image.setAttribute('src', url);
+        image.setAttribute('alt', imageAlt);
+        anchor.append(image);
+      } else {
+        anchor.textContent = label;
+      }
+      return anchor.outerHTML;
+    }
+
     function renderExecutionFields(session) {
       const handoff = session.handoffData || {};
       const choices = handoff.choices || {};
@@ -4488,10 +4526,10 @@
             </div>
             <div class="execution-live-state">${escapeExecutionValue(phase.label)}</div>
           </div>
-          ${preview?.url ? `<a class="execution-live-media" href="${preview.url}" target="_blank" rel="noopener noreferrer"><img src="${preview.url}" alt="Live execution preview" /></a>` : ''}
+          ${renderExecutionPreviewLink(preview?.url, { className: 'execution-live-media', imageAlt: 'Live execution preview' })}
           <div class="execution-live-links">
             ${pageUrl ? `<a class="execution-live-link" href="${pageUrl}" target="_blank" rel="noopener noreferrer">Open current live page</a>` : ''}
-            ${preview?.url ? `<a class="execution-live-link" href="${preview.url}" target="_blank" rel="noopener noreferrer">Open latest snapshot</a>` : ''}
+            ${renderExecutionPreviewLink(preview?.url, { className: 'execution-live-link', label: 'Open latest snapshot' })}
           </div>
         </div>
       `;

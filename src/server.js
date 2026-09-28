@@ -1,6 +1,7 @@
 import './securityBootstrap.js';
 import { readMissionKeyTransition, verifyMissionTokenSignature } from './missionKeyTransition.js';
 import { createRequestSecurity, deploymentIsProduction, productionAdminAccount } from './deploymentSecurity.js';
+import { sanitizeExecutionPreviewMetadata } from './executionPreviewSecurity.js';
 import { createRequestLimiter } from './requestRateLimits.js';
 import { futureExpiry, equalSecret, verifiedProviderIdentity, assertProviderAccountLink, assertOauthBrowserBinding } from './accountSecurity.js';
 import { assertPreparedPaymentSubmission, validTopupTransfer, assertStripeCheckoutTerms } from './paymentSecurity.js';
@@ -7289,6 +7290,14 @@ function isChromeExtensionRunnerRequest(req) {
 function isChromeExtensionDeclarativeRunnerRequest(req) {
   return isChromeExtensionRunnerRequest(req) &&
     String(req.headers['x-magic-city-runner-protocol'] || '').trim().toLowerCase() === BROWSER_EXTENSION_PLAN_PROTOCOL;
+}
+
+function isAuthenticatedChromeExtensionRunnerMutation(req, urlPath = '') {
+  if (req.method !== 'POST' || !isChromeExtensionRunnerRequest(req)) return false;
+  const runnerMutation = urlPath === '/plugins/register'
+    || /^\/connectors\/sessions\/[^/]+\/(claim|checkpoint|fulfill|runner-status|rank-candidates|final-submit-chain-authorization)$/.test(urlPath);
+  if (!runnerMutation) return false;
+  return Boolean(resolveNativeRunnerDeviceFromRequest(req));
 }
 
 function isExtensionRunnerSession(session = null) {
@@ -16551,8 +16560,10 @@ const server = http.createServer(async (req, res) => {
   try {
     requestSecurity.setHeaders(req, res);
     const url = new URL(req.url || '/', buildRequestBaseUrl(req));
-    requestSecurity.validateBrowserMutation(req);
     const urlPath = url.pathname;
+    requestSecurity.validateBrowserMutation(req, {
+      authenticatedRunnerMutation: isAuthenticatedChromeExtensionRunnerMutation(req, urlPath)
+    });
     const nativeRunnerRequestTiming = beginNativeRunnerRequestTiming(req, res, urlPath);
     if (req.method === 'GET' && urlPath === '/health') {
       const persistence = getPublicPersistenceStatus();
@@ -20763,7 +20774,9 @@ const server = http.createServer(async (req, res) => {
       if (!canExecutionPluginActForPreferredAgent({ session, pluginId: body.pluginId })) {
         return sendJson(res, 409, { error: 'checkpoint_agent_mismatch', preferredExecutionAgentId: session.preferredExecutionAgentId });
       }
-      const browser = body.browser ? sanitizeMetadata(body.browser) : null;
+      const browser = body.browser
+        ? sanitizeExecutionPreviewMetadata(sanitizeMetadata(body.browser))
+        : null;
       const runnerTiming = body.runnerTiming && typeof body.runnerTiming === 'object'
         ? sanitizeMetadata(body.runnerTiming)
         : null;
@@ -21318,7 +21331,7 @@ const server = http.createServer(async (req, res) => {
         : body.result ?? {};
       const fulfillment = {
         status: fulfillmentStatus,
-        result: sanitizeMetadata(fulfillmentResult),
+        result: sanitizeExecutionPreviewMetadata(sanitizeMetadata(fulfillmentResult)),
         handoff: sanitizeMetadata(body.handoff ?? {}),
         notes: rejectedExtensionFulfillment
           ? `Browser execution did not reach a verified checkout or human-approval boundary: ${extensionFulfillmentEvaluation.reason}`

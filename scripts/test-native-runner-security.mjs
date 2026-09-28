@@ -19,7 +19,7 @@ async function getAvailablePort() {
   });
 }
 
-async function request(baseUrl, pathName, { method = 'GET', body = null, key = '', cookie = '', bearer = '' } = {}) {
+async function request(baseUrl, pathName, { method = 'GET', body = null, key = '', cookie = '', bearer = '', headers = {} } = {}) {
   let response;
   try {
     response = await fetch(`${baseUrl}${pathName}`, {
@@ -28,7 +28,8 @@ async function request(baseUrl, pathName, { method = 'GET', body = null, key = '
         ...(body ? { 'content-type': 'application/json' } : {}),
         ...(key ? { 'x-api-key': key } : {}),
         ...(cookie ? { cookie } : {}),
-        ...(bearer ? { authorization: `Bearer ${bearer}` } : {})
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+        ...headers
       },
       body: body ? JSON.stringify(body) : undefined
     });
@@ -87,10 +88,11 @@ async function mintRunner(baseUrl, cookie, { trustMode = 'local_runner' } = {}) 
   return result.data;
 }
 
-async function registerNativePlugin(baseUrl, token, overrides = {}) {
+async function registerNativePlugin(baseUrl, token, overrides = {}, requestOptions = {}) {
   return request(baseUrl, '/plugins/register', {
     method: 'POST',
     bearer: token,
+    ...requestOptions,
     body: {
       pluginId: 'local-authenticated-browser-plugin',
       ownerAgentId: 'local-authenticated-browser-agent',
@@ -171,6 +173,37 @@ async function main() {
     const registered = await registerNativePlugin(baseUrl, tokenA);
     if (!registered.response.ok) throw new Error(`native_plugin_register_failed:${registered.response.status}:${JSON.stringify(registered.data)}`);
 
+    const extensionHeaders = {
+      origin: 'chrome-extension://security-test-runner',
+      'sec-fetch-site': 'cross-site',
+      'x-magic-city-runner-surface': 'chrome-extension',
+      'x-magic-city-runner-protocol': 'declarative-v1'
+    };
+    const cookieBoundExtensionRegistration = await registerNativePlugin(baseUrl, tokenA, {}, {
+      cookie: userA.cookie,
+      headers: extensionHeaders
+    });
+    if (!cookieBoundExtensionRegistration.response.ok) {
+      throw new Error(`cookie_bound_extension_register_failed:${cookieBoundExtensionRegistration.response.status}:${JSON.stringify(cookieBoundExtensionRegistration.data)}`);
+    }
+    const spoofedExtensionRegistration = await registerNativePlugin(baseUrl, 'invalid-runner-token', {}, {
+      cookie: userA.cookie,
+      headers: extensionHeaders
+    });
+    if (spoofedExtensionRegistration.response.status !== 403 || spoofedExtensionRegistration.data.error !== 'cross_origin_mutation_rejected') {
+      throw new Error(`spoofed_extension_origin_not_rejected:${spoofedExtensionRegistration.response.status}:${JSON.stringify(spoofedExtensionRegistration.data)}`);
+    }
+    const cookieBoundNonExtensionRegistration = await registerNativePlugin(baseUrl, tokenA, {}, {
+      cookie: userA.cookie,
+      headers: {
+        origin: 'https://evil.example',
+        'sec-fetch-site': 'cross-site'
+      }
+    });
+    if (cookieBoundNonExtensionRegistration.response.status !== 403 || cookieBoundNonExtensionRegistration.data.error !== 'cross_origin_mutation_rejected') {
+      throw new Error(`non_extension_cross_origin_not_rejected:${cookieBoundNonExtensionRegistration.response.status}:${JSON.stringify(cookieBoundNonExtensionRegistration.data)}`);
+    }
+
     const sessionA = await startBrowserSession(baseUrl, userA.cookie, 'Open https://example.com for user A.');
     const sessionB = await startBrowserSession(baseUrl, userB.cookie, 'Open https://example.org for user B.');
 
@@ -196,6 +229,19 @@ async function main() {
       }), 404);
     } catch (error) {
       throw new Error(`${error?.message || String(error)}\nchild_stderr:\n${stderr || '(none)'}`);
+    }
+
+    const cookieBoundExtensionClaim = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionA.id)}/claim`, {
+      method: 'POST',
+      cookie: userA.cookie,
+      bearer: tokenA,
+      headers: extensionHeaders,
+      body: {
+        pluginId: 'local-authenticated-browser-plugin'
+      }
+    });
+    if (cookieBoundExtensionClaim.response.status !== 409 || cookieBoundExtensionClaim.data.error !== 'extension_run_dispatch_required') {
+      throw new Error(`cookie_bound_extension_claim_blocked_before_auth:${cookieBoundExtensionClaim.response.status}:${JSON.stringify(cookieBoundExtensionClaim.data)}`);
     }
 
     const claim = await request(baseUrl, `/connectors/sessions/${encodeURIComponent(sessionA.id)}/claim`, {

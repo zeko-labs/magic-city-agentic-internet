@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { writeExecutionArtifact } from './executionArtifacts.js';
+import { startHostedBrowserPublicNetworkProxy } from './hostedBrowserNetwork.js';
 import { JOB_APPLICATION_MODE_PLAN, normalizeJobApplicationMode } from './jobApplicationModels.js';
 import { stripUsdBudgetPhrases } from './browserMissionExtraction.js';
 
@@ -90,6 +91,32 @@ async function createHumanLikeContext(browser, options = {}) {
   return context;
 }
 
+export async function launchHostedBrowser(chromium, options = {}) {
+  const networkProxy = await startHostedBrowserPublicNetworkProxy();
+  try {
+    const browser = await chromium.launch({
+      ...options,
+      proxy: { server: networkProxy.url },
+      args: [
+        ...(Array.isArray(options.args) ? options.args : []),
+        '--proxy-bypass-list=<-loopback>',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        '--webrtc-ip-handling-policy=disable_non_proxied_udp',
+        '--disable-quic'
+      ]
+    });
+    return { browser, networkProxy };
+  } catch (error) {
+    await networkProxy.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function closeHostedBrowser(runtime = null) {
+  await runtime?.browser?.close().catch(() => {});
+  await runtime?.networkProxy?.close().catch(() => {});
+}
+
 async function createBrowserRuntime(chromium, options = {}) {
   const cdpUrl = String(
     options.cdpUrl ||
@@ -129,13 +156,14 @@ async function createBrowserRuntime(chromium, options = {}) {
       shouldCloseContext: false
     };
   }
-  const browser = await chromium.launch({
+  const hosted = await launchHostedBrowser(chromium, {
     headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',
     executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
     args: ['--disable-blink-features=AutomationControlled']
   });
   return {
-    browser,
+    browser: hosted.browser,
+    networkProxy: hosted.networkProxy,
     mode: 'server_ephemeral_browser',
     reuseExistingContext: false,
     shouldCloseBrowser: true
@@ -2335,7 +2363,7 @@ export async function runAssistedBrowserWorkerExecution(session, options = {}) {
 	      await runtime.context.close().catch(() => {});
 	    }
 	    if (runtime?.shouldCloseBrowser && runtime.browser) {
-	      await runtime.browser.close().catch(() => {});
+	      await closeHostedBrowser(runtime);
 	    }
 	  }
 }
@@ -2843,9 +2871,9 @@ export async function runFoodExecutionInBrowser(session, options = {}) {
     };
   }
 
-  let browser;
+  let browserRuntime;
   try {
-    browser = await chromium.launch({
+    browserRuntime = await launchHostedBrowser(chromium, {
       headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',
       executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
       args: ['--disable-blink-features=AutomationControlled']
@@ -2860,6 +2888,7 @@ export async function runFoodExecutionInBrowser(session, options = {}) {
   }
 
   try {
+    const browser = browserRuntime.browser;
     const context = await createHumanLikeContext(browser);
     const page = await context.newPage();
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -3016,7 +3045,7 @@ export async function runFoodExecutionInBrowser(session, options = {}) {
       cartOpened
     };
   } finally {
-    await browser.close();
+    await closeHostedBrowser(browserRuntime);
   }
 }
 
@@ -3034,9 +3063,9 @@ export async function runTravelExecutionInBrowser(session, options = {}) {
     };
   }
 
-  let browser;
+  let browserRuntime;
   try {
-    browser = await chromium.launch({
+    browserRuntime = await launchHostedBrowser(chromium, {
       headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',
       executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined
     });
@@ -3051,6 +3080,7 @@ export async function runTravelExecutionInBrowser(session, options = {}) {
   }
 
   try {
+    const browser = browserRuntime.browser;
     const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
     await page.goto(urls.flightSearchUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(2200);
@@ -3084,7 +3114,7 @@ export async function runTravelExecutionInBrowser(session, options = {}) {
       ...urls
     };
   } finally {
-    await browser.close();
+    await closeHostedBrowser(browserRuntime);
   }
 }
 
@@ -3102,9 +3132,9 @@ export async function runJobApplicationExecutionInBrowser(session, options = {})
     };
   }
 
-  let browser;
+  let browserRuntime;
   try {
-    browser = await chromium.launch({
+    browserRuntime = await launchHostedBrowser(chromium, {
       headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',
       executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined
     });
@@ -3118,6 +3148,7 @@ export async function runJobApplicationExecutionInBrowser(session, options = {})
   }
 
   try {
+    const browser = browserRuntime.browser;
     const context = await createHumanLikeContext(browser);
     const page = await context.newPage();
     const resumePdf = await createResumePdf(browser, session.id, search.applicantProfile.resumeText);
@@ -3313,7 +3344,7 @@ export async function runJobApplicationExecutionInBrowser(session, options = {})
       ...search
     };
   } finally {
-    await browser.close();
+    await closeHostedBrowser(browserRuntime);
   }
 }
 
@@ -3344,11 +3375,12 @@ export async function discoverFoodOptionsInBrowser(session) {
     };
   }
 
-  const browser = await chromium.launch({
+  const browserRuntime = await launchHostedBrowser(chromium, {
     headless: process.env.PLAYWRIGHT_HEADLESS !== 'false'
   });
 
   try {
+    const browser = browserRuntime.browser;
     const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(1800);
@@ -3403,6 +3435,6 @@ export async function discoverFoodOptionsInBrowser(session) {
         : 'The provider page opened, but no live restaurant cards were extracted.'
     };
   } finally {
-    await browser.close();
+    await closeHostedBrowser(browserRuntime);
   }
 }

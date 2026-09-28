@@ -135,8 +135,9 @@ export function createRequestSecurity(env = process.env) {
     res.setHeader('Permissions-Policy', 'camera=(), geolocation=(), publickey-credentials-get=(self), publickey-credentials-create=(self)');
     if (origin.startsWith('https://') || secure(req)) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   }
-  function validateBrowserMutation(req) {
+  function validateBrowserMutation(req, { authenticatedRunnerMutation = false } = {}) {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !req.headers.cookie) return;
+    if (authenticatedRunnerMutation) return;
     const expected = origin || baseUrl(req);
     if (req.headers.origin && req.headers.origin !== expected) throw fail('cross_origin_mutation_rejected', 403);
     if (req.headers['sec-fetch-site'] === 'cross-site') throw fail('cross_origin_mutation_rejected', 403);

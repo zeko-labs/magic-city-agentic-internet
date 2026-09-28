@@ -11859,7 +11859,12 @@
             </div>
             ${previewRows.length ? `
               <div class="execution-job-proof-panel">
-                ${previewRows.map((row) => `
+                ${previewRows.map((row) => {
+                  const rowPreviewLink = renderExecutionPreviewLink(row.previewArtifact?.url, {
+                    className: 'execution-result-link',
+                    label: 'Snapshot'
+                  });
+                  return `
                   <div class="execution-job-proof-item">
                     <div class="execution-job-proof-head">
                       <div class="execution-job-proof-title">${escapeHtml(`${row.sequence || '?'}. ${row.jobTitle || row.boardLabel || 'Application target'}`)}</div>
@@ -11869,14 +11874,15 @@
                       </div>
                     </div>
                     <div class="execution-job-proof-meta">${escapeHtml([row.boardLabel || '', row.confirmationLabel || '', row.manualTakeoverReason || row.nextHumanAction || ''].filter(Boolean).join(' · '))}</div>
-                    ${(row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl || row.previewArtifact?.url) ? `
+                    ${(row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl || rowPreviewLink) ? `
                       <div class="execution-job-ledger-links">
                         ${row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl ? `<a class="execution-result-link" href="${escapeHtml(row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl || '')}" target="_blank" rel="noopener noreferrer">${escapeHtml(describeJobPrimaryLinkLabel(row))}</a>` : ''}
-                        ${row.previewArtifact?.url ? `<a class="execution-result-link" href="${escapeHtml(row.previewArtifact.url)}" target="_blank" rel="noopener noreferrer">Snapshot</a>` : ''}
+                        ${rowPreviewLink}
                       </div>
                     ` : ''}
                   </div>
-                `).join('')}
+                `;
+                }).join('')}
               </div>
             ` : ''}
             <div class="execution-job-ledger-sub">${escapeHtml(entry.updatedAt ? `Updated ${new Date(entry.updatedAt).toLocaleString()}` : 'Pending')}</div>
@@ -16552,6 +16558,44 @@
         .replace(/"/g, '&quot;');
     }
 
+    function safeExecutionPreviewUrl(value) {
+      const raw = String(value || '').trim();
+      if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+      try {
+        const parsed = new URL(raw, window.location.origin);
+        if (parsed.username || parsed.password) return '';
+        if (parsed.origin === window.location.origin) {
+          return parsed.pathname.startsWith('/artifacts/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : '';
+        }
+        return parsed.protocol === 'https:' ? parsed.href : '';
+      } catch {
+        return '';
+      }
+    }
+
+    function renderExecutionPreviewLink(value, {
+      className = '',
+      label = '',
+      imageAlt = ''
+    } = {}) {
+      const url = safeExecutionPreviewUrl(value);
+      if (!url) return '';
+      const anchor = document.createElement('a');
+      anchor.className = className;
+      anchor.setAttribute('href', url);
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+      if (imageAlt) {
+        const image = document.createElement('img');
+        image.setAttribute('src', url);
+        image.setAttribute('alt', imageAlt);
+        anchor.append(image);
+      } else {
+        anchor.textContent = label;
+      }
+      return anchor.outerHTML;
+    }
+
     function resolveTravelExecutionOwnerValue({
       travelMode = '',
       requestedOwner = '',
@@ -18152,7 +18196,10 @@
         ...(cardReady && !checkoutSummary.expectedCardLast4 ? [['Card', paymentProfileText]] : []),
         ...(browserExecution?.localCheckoutProfileExpected && !browserExecution.localCheckoutProfileAvailable ? [['Vault', 'Unlock needed']] : [])
       ].slice(0, 4);
-      const previewUrl = browserExecution?.previewArtifact?.url || '';
+      const previewLink = renderExecutionPreviewLink(browserExecution?.previewArtifact?.url, {
+        className: 'execution-live-link',
+        label: 'Screenshot'
+      });
       return `
         <div class="trace-row">
           <div class="trace-label">Browser outcome</div>
@@ -18177,7 +18224,7 @@
                 ${canResumeCheckoutReconcile ? `<button class="execution-live-link execution-live-link-primary" type="button" data-execution-continue-checkout="${escapeExecutionValue(session.id)}">Fix saved address and card</button>` : ''}
                 ${canPlaceReviewedOrder ? `<button class="execution-live-link execution-live-link-primary" type="button" data-execution-final-submit="${escapeExecutionValue(session.id)}">Approve and place order</button>` : ''}
                 ${finalUrl ? `<button class="execution-live-link execution-live-link-primary" type="button" data-native-runner-focus-tab="${escapeExecutionValue(session.id)}" data-fallback-url="${escapeExecutionValue(finalUrl)}">Open tab</button>` : ''}
-                ${previewUrl ? `<a class="execution-live-link" href="${escapeExecutionValue(previewUrl)}" target="_blank" rel="noopener noreferrer">Screenshot</a>` : ''}
+                ${previewLink}
               </div>
             </div>
           </div>
@@ -18219,11 +18266,11 @@
             </div>
             <div class="execution-live-state">${escapeExecutionValue(phase.label)}</div>
           </div>
-          ${preview?.url ? `<a class="execution-live-media" href="${preview.url}" target="_blank" rel="noopener noreferrer"><img src="${preview.url}" alt="Live execution preview" /></a>` : ''}
+          ${renderExecutionPreviewLink(preview?.url, { className: 'execution-live-media', imageAlt: 'Live execution preview' })}
           ${renderCheckoutSummary({ ...checkoutSummary, orderSubmitted: browserOrderSubmitted })}
           <div class="execution-live-links execution-review-actions">
             ${pageUrl ? `<button class="execution-live-link execution-live-link-primary" type="button" data-native-runner-focus-tab="${escapeExecutionValue(session.id)}" data-fallback-url="${escapeExecutionValue(pageUrl)}">Open tab</button>` : ''}
-            ${preview?.url ? `<a class="execution-live-link" href="${preview.url}" target="_blank" rel="noopener noreferrer">Snapshot</a>` : ''}
+            ${renderExecutionPreviewLink(preview?.url, { className: 'execution-live-link', label: 'Snapshot' })}
           </div>
         </div>
       `;
@@ -18336,6 +18383,10 @@
             ${proofManifest?.statementKind ? `<div style="margin-top:6px">Sponsored proof bundle: ${escapeExecutionValue(proofManifest.statementKind)}${proofManifest.bundleHash ? ` · ${escapeExecutionValue(String(proofManifest.bundleHash).slice(0, 22))}…` : ''}</div>` : ''}
             <div class="execution-job-ledger">
               ${ledger.map((row) => {
+                const rowPreviewLink = renderExecutionPreviewLink(row.previewArtifact?.url, {
+                  className: 'execution-result-link',
+                  label: 'Snapshot'
+                });
                 const proofStatus = overallVerification?.anchorStatus === 'failed'
                   ? 'Zeko attestation failed'
                   : overallVerification?.anchorStatus === 'submitted' || overallVerification?.anchorStatus === 'confirmed'
@@ -18359,7 +18410,7 @@
                       ${row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl ? `<a class="execution-result-link" href="${escapeExecutionValue(row.manualTakeoverUrl || row.applicationUrl || row.jobUrl || row.searchUrl || '')}" target="_blank" rel="noopener noreferrer">${escapeExecutionValue(describeJobPrimaryLinkLabel(row))}</a>` : ''}
                       ${row.jobUrl && row.manualTakeoverUrl && row.jobUrl !== row.manualTakeoverUrl ? `<a class="execution-result-link" href="${escapeExecutionValue(row.jobUrl)}" target="_blank" rel="noopener noreferrer">Listing</a>` : ''}
                       ${!row.jobUrl && row.searchUrl && !(row.manualTakeoverUrl || row.applicationUrl) ? `<a class="execution-result-link" href="${escapeExecutionValue(row.searchUrl)}" target="_blank" rel="noopener noreferrer">Search</a>` : ''}
-                      ${row.previewArtifact?.url ? `<a class="execution-result-link" href="${row.previewArtifact.url}" target="_blank" rel="noopener noreferrer">Snapshot</a>` : ''}
+                      ${rowPreviewLink}
                     </div>
                   </div>
                 `;
