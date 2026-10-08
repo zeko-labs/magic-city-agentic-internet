@@ -1,3 +1,4 @@
+import { validateRelayerCredentials } from './relayerSecurity.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -21,6 +22,8 @@ import {
   upsertMbaMissionRegistryState,
   withMbaMissionRegistryMutationLock
 } from './mbaRegistryStore.js';
+
+validateRelayerCredentials();
 
 // The relayer is an internal capability. Expose it only when an operator opts in.
 const HOST = process.env.ZEKO_RELAYER_HOST || process.env.ZEKO_SUBMITTER_HOST || process.env.HOST || '127.0.0.1';

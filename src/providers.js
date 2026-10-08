@@ -182,6 +182,7 @@ export async function extractBrowserMissionSchemaWithProvider({ prompt, context 
   try {
     const response = await fetch(`${provider.baseUrl}${provider.path}`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,
@@ -360,6 +361,7 @@ export async function rankAmazonCandidatesWithProvider({ request = '', maxPrice 
   try {
     const response = await fetch(`${provider.baseUrl}${provider.path}`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,
@@ -914,6 +916,7 @@ async function executeOpenAICompatProvider({ provider, prompt, capability, conte
   try {
     response = await fetch(`${provider.baseUrl}${provider.path}`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,
@@ -1022,6 +1025,7 @@ async function* streamOpenAICompatProvider({ provider, prompt, capability, conte
   try {
     response = await fetch(`${provider.baseUrl}${provider.path}`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,

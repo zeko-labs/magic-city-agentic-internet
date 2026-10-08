@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 import { readMissionKeyTransition } from './missionKeyTransition.js';
+import { isStrongRelayerCredential } from './relayerSecurity.js';
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const enabled = (value) => String(value).toLowerCase() === 'true';
@@ -55,6 +56,15 @@ export function validateDeployment(env = process.env) {
   if (env.MAGIC_CITY_RATE_LIMIT_STORE !== 'postgres') throw fail('production_requires_postgres_rate_limits');
   if (!list(env.PUBLIC_API_KEYS).length || list(env.PUBLIC_API_KEYS).some((key) => key.length < 32 || /change[-_ ]?me/i.test(key))) throw fail('production_requires_strong_public_api_keys');
   const secrets = ['ADMIN_TOKEN', 'PRIVACY_SALT', 'MISSION_BOUND_AUTH_SECRET', 'MCP_OAUTH_SECRET', 'MAGIC_CITY_STATE_ENCRYPTION_KEY'];
+  // Optional relay integrations stay disabled when absent; configured credentials
+  // must not inherit development placeholders or another service's privilege.
+  for (const name of ['RELAYER_TOKEN', 'ZEKO_RELAYER_TOKEN', 'ZEKO_SUBMITTER_TOKEN']) {
+    if (!env[name]) continue;
+    // The submitter name is a legacy alias for the same outbound capability.
+    if (name === 'ZEKO_SUBMITTER_TOKEN' && env[name] === env.ZEKO_RELAYER_TOKEN) continue;
+    if (!isStrongRelayerCredential(env[name])) throw fail(`production_requires_strong_${name}`);
+    secrets.push(name);
+  }
   if (env.MAGIC_CITY_PLUGIN_API_KEY) {
     secrets.push('MAGIC_CITY_PLUGIN_API_KEY');
     if (list(env.PUBLIC_API_KEYS).includes(env.MAGIC_CITY_PLUGIN_API_KEY)) throw fail('production_plugin_credential_reused');

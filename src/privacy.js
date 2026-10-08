@@ -11,10 +11,25 @@ let cachedKey = null;
 function getPrivacyKey() {
   if (cachedKey) return cachedKey;
   fs.mkdirSync(path.dirname(PRIVACY_KEY_PATH), { recursive: true });
-  if (!fs.existsSync(PRIVACY_KEY_PATH)) {
-    fs.writeFileSync(PRIVACY_KEY_PATH, crypto.randomBytes(32).toString('base64'), 'utf8');
+  try {
+    // Exclusive creation cannot overwrite an existing deployment's key.
+    fs.writeFileSync(PRIVACY_KEY_PATH, crypto.randomBytes(32).toString('base64'), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
   }
-  const raw = fs.readFileSync(PRIVACY_KEY_PATH, 'utf8').trim();
+  const fd = fs.openSync(PRIVACY_KEY_PATH, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  let raw;
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw new Error('invalid_privacy_key_file');
+    const permissions = stat.mode & 0o777;
+    // A 0400 secret mounted read-only is already owner-only. Do not attempt to
+    // chmod it: read-only secret mounts commonly reject metadata writes.
+    if (permissions !== 0o400 && permissions !== 0o600) fs.fchmodSync(fd, 0o600);
+    raw = fs.readFileSync(fd, 'utf8').trim();
+  } finally {
+    fs.closeSync(fd);
+  }
   const key = Buffer.from(raw, 'base64');
   if (key.length !== 32) throw new Error('invalid_privacy_key_length');
   cachedKey = key;

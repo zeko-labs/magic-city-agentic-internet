@@ -39,6 +39,14 @@ const production = {
 };
 for (const key of ['ADMIN_TOKEN', 'PRIVACY_SALT', 'MISSION_BOUND_AUTH_SECRET', 'MCP_OAUTH_SECRET', 'MAGIC_CITY_STATE_ENCRYPTION_KEY']) production[key] = crypto.randomBytes(32).toString('hex');
 validateDeployment(production);
+assert.throws(() => validateDeployment({ ...production, RELAYER_TOKEN: 'change-me' }), /strong_RELAYER_TOKEN/);
+assert.throws(() => validateDeployment({ ...production, ZEKO_RELAYER_TOKEN: 'change-me' }), /strong_ZEKO_RELAYER_TOKEN/);
+assert.throws(() => validateDeployment({ ...production, ZEKO_RELAYER_TOKEN: 'a'.repeat(32) }), /strong_ZEKO_RELAYER_TOKEN/);
+assert.throws(() => validateDeployment({ ...production, ZEKO_SUBMITTER_TOKEN: 'a'.repeat(32) }), /strong_ZEKO_SUBMITTER_TOKEN/);
+assert.throws(() => validateDeployment({ ...production, RELAYER_TOKEN: production.ADMIN_TOKEN }), /distinct_secrets/);
+validateDeployment({ ...production, RELAYER_TOKEN: crypto.randomBytes(32).toString('hex') });
+const outboundRelayToken = crypto.randomBytes(32).toString('hex');
+validateDeployment({ ...production, ZEKO_RELAYER_TOKEN: outboundRelayToken, ZEKO_SUBMITTER_TOKEN: outboundRelayToken });
 assert.throws(
   () => validateDeployment({ ...production, DEPLOYMENT_PROFILE: '', NODE_ENV: 'production' }),
   /production_requires_deployment_profile/

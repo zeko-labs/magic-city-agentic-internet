@@ -6,6 +6,11 @@ export async function testSecurityBoundaries({ request, env, ownerCookie }) {
   const post = (route, body, headers = {}) => request(route, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   const expect = async (r, status) => { assert.equal(r.status, status, await r.clone().text()); return r.json(); };
   const owner = { cookie: ownerCookie };
+  await expect(await post('/billing/credits/bootstrap', { requesterId: 'rotating-anonymous-identity' }), 401);
+  await expect(await post('/billing/credits/bootstrap', { requesterId: 'different-user' }, owner), 409);
+  const creditClaims = await Promise.all(Array.from({ length: 8 }, () => post('/billing/credits/bootstrap', {}, owner)));
+  assert.equal(creditClaims.filter(r => r.status === 200).length, 1, 'one daily grant despite concurrent requests');
+  assert.equal(creditClaims.filter(r => r.status === 409).length, 7, 'duplicate grants rejected');
   const otherResponse = await post('/auth/register', { email: 'boundary-other@example.test', passphrase: 'synthetic-only-password' });
   await expect(otherResponse, 201);
   const other = { cookie: otherResponse.headers.get('set-cookie').split(';')[0] };
