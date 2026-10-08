@@ -12,10 +12,31 @@ file or frontend bundle. Run `npm run check:deployment-security` using that same
 environment. Then start the service and check `/health`; the configuration check
 does not contact the database or validate OAuth callbacks.
 
-`DEPLOYMENT_PROFILE=production` is explicit. `NODE_ENV=production` alone is not
-an opt-in. Omitting the profile retains compatibility with existing deployment
-configuration, **not the production guarantees below**. Development defaults are
-not appropriate for a publicly exposed service.
+Set `DEPLOYMENT_PROFILE=production` explicitly. With `NODE_ENV=production`, a
+missing or conflicting deployment profile now stops startup. Omitting both is
+development compatibility mode, not a safe public deployment configuration.
+Development defaults are not appropriate for a publicly exposed service.
+
+The standalone Zeko relayer has its own credential guard: either production
+setting requires a strong `ZEKO_RELAYER_TOKEN` (legacy `ZEKO_SUBMITTER_TOKEN` is
+still accepted). Generate at least 32 random bytes in your secret manager, keep
+the relayer private, and coordinate any credential replacement with its caller.
+This check does not rotate keys or migrate storage. Never use the example
+`change-me` token in a hosted relayer. Private keys belong in the deployment's
+secret manager, not command arguments, source control, images or logs.
+
+Model HTTP calls reject redirects, including same-origin redirects. Configure
+the final model API URL directly. This prevents a provider redirect from
+forwarding prompts or custom credential headers to another destination. It is
+not a DNS-pinning policy for operator-configured provider hosts: protect provider
+configuration and use egress controls appropriate to the deployment. Local model
+URLs remain supported when deliberately configured by the operator.
+
+The optional `data/privacy.key` must be an owned regular file, not a symlink.
+On first use, existing key bytes are retained and broad permissions are tightened
+to `0600`; a new key is created exclusively with `0600`. A read-only secret mount
+must already have these permissions. Back up the key and encrypted payloads
+together; this change neither re-encrypts data nor rotates the key.
 
 The production profile requires:
 

@@ -167,7 +167,7 @@ Point Magic City at the relayer service:
 ```env
 ZEKO_SUBMIT_MODE=relay
 ZEKO_RELAYER_URL=http://127.0.0.1:4412/submit
-ZEKO_RELAYER_TOKEN=change-me
+ZEKO_RELAYER_TOKEN=<strong-random-secret-from-your-secret-manager>
 ```
 
 Relayer modes:
@@ -492,9 +492,12 @@ curl -X POST http://127.0.0.1:4411/intent \
 ```
 
 Privacy behavior:
-- `requesterId` is never stored raw; only salted hash (`requesterHash`) is stored.
-- `prompt` is never stored plaintext.
-- default stores only `promptHash`; optional encrypted storage controlled by `STORE_ENCRYPTED_PAYLOADS=true`.
+- Intent records use salted `requesterHash` and `promptHash` commitments. This
+  is not a claim that raw identifiers/content never exist elsewhere: authenticated
+  accounts, billing metadata, saved conversations and execution state have their
+  own retention paths.
+- `STORE_ENCRYPTED_PAYLOADS=true` enables an optional encrypted prompt copy.
+  Disabling it does not prevent transmission to a configured model provider.
 - each request also gets a `requestCommitment`
 - routed requests carry `batchWindowId` and `batchRoot` metadata
 
@@ -503,12 +506,16 @@ Privacy behavior:
 ```bash
 curl -X POST http://127.0.0.1:4411/billing/credits/bootstrap \
   -H 'content-type: application/json' \
-  -d '{"requesterId":"tester@example.com"}'
+  --cookie /path/to/private-authenticated-cookie-jar \
+  -d '{}'
 ```
 
-This grants one free alpha credit pack per requester hash. No Stripe or admin token required.
+This requires a signed-in account and grants at most one daily pack to its bound
+identity. Supplying another requester ID is rejected. Concurrent claims are
+idempotent; changing a requester string is not a new account. This is not Sybil
+resistance: operators still need signup/abuse controls and a promotional budget.
 
-### Zero-friction quickstart
+### Local-development quickstart (disabled in production)
 
 If you want a ready-to-route agent immediately:
 
@@ -621,7 +628,7 @@ Manual top-up:
 ```bash
 curl -X POST http://127.0.0.1:4411/billing/credits/topup \
   -H 'content-type: application/json' \
-  -H 'x-admin-token: change-me' \
+  -H 'x-admin-token: <your-admin-secret>' \
   -d '{"requesterId":"user@example.com","amount":25,"provider":"stripe_simulated"}'
 
 curl 'http://127.0.0.1:4411/billing/account?requesterId=user@example.com'
@@ -650,7 +657,7 @@ curl -X POST http://127.0.0.1:4411/disputes/resolve \
 ```bash
 curl -X POST http://127.0.0.1:4411/relayer/receipts/submit \
   -H 'content-type: application/json' \
-  -H 'x-relayer-token: change-me' \
+  -H 'x-relayer-token: <your-receipt-import-secret>' \
   -d '{"agentId":"openclaw-research-1","taskId":"relayed-1","outcome":"success","laneId":"financial-analysis"}'
 ```
 
@@ -748,19 +755,37 @@ This uses:
 
 ### Hosted defaults
 
-- Bind `HOST=0.0.0.0`
-- Set `PORT` from your platform
-- Persist the `/app/data` directory (volume or managed disk) so reputation/receipts survive restarts
-- Prefer `DATABASE_URL` for hosted alpha and production-like persistence
-- `data/state.json` remains the local fallback when `DATABASE_URL` is unset
-- Set strong `PRIVACY_SALT`, `ADMIN_TOKEN`, and `RELAYER_TOKEN`
-- Keep `PRIVACY_MODE=strict` and prefer `STORE_ENCRYPTED_PAYLOADS=false` for minimal retention
-- Set `FREE_TEST_CREDITS=25` (or your chosen alpha amount)
-- Set `QUICKSTART_STAKE_CREDITS=50` (or your chosen demo routing threshold)
-- Optional: set `PUBLIC_API_KEYS` to gate direct API integrations while keeping the UI open
-- Set `PROTOCOL_FEE_BPS=100` for a 1% protocol fee on credit settlements
-- Keep `CREDIT_SCALE` stable once deployed (do not change without migration)
-- Protected endpoints (`/admin/*`, `/payouts/*`, `/privacy/forget-user`, `/relayer/*`, `/billing/credits/topup`) require tokens unless `ALLOW_INSECURE_ADMIN=true` (dev-only)
+- Use [.env.production.example](.env.production.example) and the
+  [production security guide](docs/production-security.md), not `.env.example`.
+- Set `NODE_ENV=production` and `DEPLOYMENT_PROFILE=production`. Missing or
+  conflicting production profiles fail startup. Require encrypted PostgreSQL
+  persistence, the single-writer lock, shared rate limits and an exact HTTPS origin.
+- Bind the web service behind a controlled TLS proxy. Keep the standalone relayer
+  private; configure its strong credential separately from the web application's.
+- Use independent secrets and scoped plugin credentials. Production rejects
+  insecure-admin mode, local-IP admin and development faucet/stake shortcuts.
+- `data/state.json` is for local development, not multi-process production.
+- `STORE_ENCRYPTED_PAYLOADS=false` avoids the optional encrypted prompt copy;
+  it does not mean prompts are hidden from configured model providers or that
+  all other stores/logs contain no content. See the privacy boundaries below.
+- Keep `CREDIT_SCALE` stable; changing units requires an explicit accounting migration.
+
+### Privacy boundaries
+
+Requester hashes are pseudonyms, not anonymity or KYC. A strong salt makes
+guessing harder but does not protect low-entropy identifiers after salt compromise.
+General chat sends the prompt and bounded conversation context to the configured
+model provider. Provider routing labels are not contractual no-retention guarantees.
+Use a self-hosted model or an approved provider/data agreement for sensitive data.
+
+The local vault uses AES-GCM; its device-unlock key is a non-exportable browser
+CryptoKey stored in IndexedDB. WebAuthn gates the normal UI unlock, but this is not
+hardware-wrapped encryption against malicious same-origin JavaScript. An XSS,
+compromised browser or privileged extension remains a risk. Coarse vault summary
+fields are stored outside the ciphertext and unlocked data exists in session memory
+and session storage. Do not advertise the vault as protecting against a compromised
+application origin. Optional server payload keys are owner-only local files; back
+them up securely without rotating existing keys during an upgrade.
 
 Security note:
 - Never commit live Stripe keys into repo files. Load them from your host secret manager only.
