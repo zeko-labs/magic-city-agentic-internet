@@ -209,9 +209,9 @@ if (!/ACTIVE_MISSION_RECOVERY_DELAY_MS\s*=\s*30_000/.test(packagedBackground)
   fail('lean gateway must keep an active mission recoverable across MV3 suspension');
 }
 if (!/async function reconcileCommittedCheckpoint\(result\)/.test(packagedBackground)
-  || !/open-site\|\(\?:prepare\|open\|inspect\)-cart\|continue-checkout\|reconcile-payment-profile\|inspect-review\|submit-final-order\|confirm-pending-order\|confirm-merchant-order/.test(packagedBackground)
+  || !/open-site\|select-match\|\(\?:prepare\|open\|inspect\)-cart\|continue-checkout\|reconcile-payment-profile\|inspect-review\|submit-final-order\|confirm-pending-order\|confirm-merchant-order/.test(packagedBackground)
   || !/MAX_INLINE_CHECKPOINT_RECONCILIATIONS\s*=\s*8/.test(packagedBackground)) {
-  fail('committed checkout checkpoints must reconcile inline only for the reviewed action allowlist');
+  fail('committed browser checkpoints must reconcile inline only for the reviewed action allowlist');
 }
 if (!/let finalSubmitAuthorityLease = normalizeFinalSubmitAuthorityLease/.test(packagedLegacyBackground)
   || !/const leaseScopeChangedAfterCheckpoint =/.test(packagedLegacyBackground)
@@ -272,7 +272,8 @@ if (!/browserActionIndeterminate:\s*true/.test(packagedLegacyBackground)
 }
 if (!/retryingRecoverableExecution/.test(packagedBackground)
   || !/retrying_browser_step/.test(packagedBackground)
-  || !/\^select-match/.test(packagedBackground)) {
+  || !/\^select-match/.test(packagedBackground)
+  || !/open-site\|select-match\|/.test(packagedBackground)) {
   fail('select-match executor injection recovery must remain inside the active mission connection');
 }
 if (!/onClaimAccepted/.test(packagedLegacyBackground)
@@ -342,6 +343,8 @@ if (!/onClaimAccepted/.test(packagedLegacyBackground)
   for (const focus of [
     'claim-rejection',
     'selection-injection-recovery',
+    'selection-checkpoint-response-loss',
+    'selection-checkpoint-connection-drop',
     'selection-delayed-page-load',
     'selection-fast-path-timeout',
     'selection-product-verification-failure'

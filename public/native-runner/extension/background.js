@@ -11,7 +11,7 @@ const ACTIVE_MISSION_RECOVERY_DELAY_MS = 30_000;
 const ACTIVE_MISSION_PROGRESS_INTERVAL_MS = 15_000;
 const INLINE_CHECKPOINT_RECONCILIATION_DELAY_MS = 200;
 const MAX_INLINE_CHECKPOINT_RECONCILIATIONS = 8;
-const LEAN_RUNTIME_MODE = 'v0.5.19-unreadable-product-backup';
+const LEAN_RUNTIME_MODE = 'v0.5.20-selection-checkpoint-recovery';
 const PROGRESS_STREAM_ID = globalThis.crypto?.randomUUID?.() || `progress-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const ALLOWED_EXTERNAL_ORIGINS = new Set([
   'https://magic-city.ai',
@@ -85,7 +85,7 @@ async function reconcileCommittedCheckpoint(result) {
     const recoveryStatus = String(interrupted.status || stored.lastExecution?.status || '');
     const recoverableAction = recoveryStatus === 'retrying_browser_step'
       ? /^select-match(?:-\d+)?$/.test(actionId)
-      : /^(?:open-site|(?:prepare|open|inspect)-cart|continue-checkout|reconcile-payment-profile|inspect-review|submit-final-order|confirm-pending-order|confirm-merchant-order)(?:-\d+)?$/.test(actionId);
+      : /^(?:open-site|select-match|(?:prepare|open|inspect)-cart|continue-checkout|reconcile-payment-profile|inspect-review|submit-final-order|confirm-pending-order|confirm-merchant-order)(?:-\d+)?$/.test(actionId);
     if (!recoverableAction
       || String(stored.lastExecution?.sessionId || '') !== sessionId
       || String(stored.activeRun?.sessionId || '') !== sessionId) {
