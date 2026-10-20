@@ -210,13 +210,10 @@ existing pairing, dispatch, plan, proof and receipt contract.
 
 ## Licensing
 
-The custom helper starter has its own Apache-2.0 license. The hosted Magic City
-service, default Runner and protected protocol implementation use the licenses
-and terms in `LICENSE`, `LICENSING.md`,
-`LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md`, `PRICING.md` and
-`COMMERCIAL-TERMS.md`. White-label branding and independent deployment should
-be confirmed against those controlling terms; the helper starter's license
-does not extend to the rest of the repository.
+The custom helper starter and the rest of the Zeko-authored repository are
+licensed under Apache-2.0. See `LICENSE` and `LICENSING.md`. White-label
+branding and independent deployment should be reviewed separately with Zeko
+Labs because the Apache license does not grant trademark rights.
 
 ## Related Documentation
 

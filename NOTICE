@@ -1,9 +1,9 @@
 Zeko
-Copyright (c) Zeko Labs, Inc. All rights reserved.
+Copyright (c) Zeko Labs, Inc.
 
-This repository includes Magic City components licensed under BUSL-1.1 with
-the Zeko Additional Use Grant, permissively licensed adoption-layer materials,
-and third-party or upstream-derived components under their original licenses.
+Original Zeko-authored material in this repository is licensed under the Apache
+License, Version 2.0. Third-party and upstream-derived components retain their
+original license notices.
 
 Magic City is a retail-facing internet-agent execution and commerce platform.
 Its protected implementation includes chat-to-execution routing, agent

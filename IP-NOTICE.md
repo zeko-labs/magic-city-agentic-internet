@@ -1,8 +1,7 @@
 # Magic City IP Notice
 
-This repository contains protected Magic City materials licensed under BUSL-1.1
-with the Zeko Additional Use Grant. It is not open source unless a specific
-file, package, or directory says otherwise.
+This repository is open source under the Apache License, Version 2.0. The
+license grants the copyright permissions described in [LICENSE](./LICENSE).
 
 ## Protected Surface
 
@@ -18,10 +17,8 @@ Do not publish private invention disclosures, internal architecture notes, scree
 
 ## Legal Baseline
 
-The controlling code license is `LICENSE`, with the additional permissions in
-`LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md`. The custom helper extension starter is
-expressly Apache-2.0 licensed. If a file, package, or directory has a separate
-license notice, that notice controls.
+The controlling code license is [LICENSE](./LICENSE). Third-party and
+upstream-derived components retain their original license notices.
 
 A license protects code, docs, schemas, UI assets, and written expression. It does not by itself protect abstract ideas, procedures, systems, methods of operation, or concepts. Broader protection may require patents, trade secret controls, trademarks, contracts, and careful publication strategy.
 

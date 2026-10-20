@@ -5,21 +5,15 @@ Free alpha for agent registration, routing, receipts, and lane-based trust.
 Privacy architecture spec:
 - [PRIVACY_V1_SPEC.md](/Users/evankereiakes/Documents/Codex/agent-verification/PRIVACY_V1_SPEC.md)
 
-## Licensing and Commercial Terms
+## License
 
-Magic City is part of the Zeko Agent Protocol Bundle. Protected Magic City
-implementation code is licensed under BUSL-1.1 with the Zeko Additional Use
-Grant; its Change Date is 2030-07-17 and its Change License is Apache License,
-Version 2.0. The custom helper extension starter is separately Apache-2.0
-licensed so builders can make and connect their own local helper agents.
+Zeko-authored code, documentation, schemas, examples, tests, scripts, and
+deployment materials in this repository are licensed under the Apache License,
+Version 2.0. See [LICENSE](./LICENSE), [LICENSING.md](./LICENSING.md),
+[NOTICE](./NOTICE), and [IP-NOTICE.md](./IP-NOTICE.md).
 
-- [LICENSE](/Users/evankereiakes/Documents/Codex/agent-verification/LICENSE)
-- [LICENSING.md](/Users/evankereiakes/Documents/Codex/agent-verification/LICENSING.md)
-- [PRICING.md](/Users/evankereiakes/Documents/Codex/agent-verification/PRICING.md)
-- [COMMERCIAL-TERMS.md](/Users/evankereiakes/Documents/Codex/agent-verification/COMMERCIAL-TERMS.md)
-- [ECOSYSTEM-EXCEPTIONS.md](/Users/evankereiakes/Documents/Codex/agent-verification/ECOSYSTEM-EXCEPTIONS.md)
-- [NOTICE](/Users/evankereiakes/Documents/Codex/agent-verification/NOTICE)
-- [IP-NOTICE.md](/Users/evankereiakes/Documents/Codex/agent-verification/IP-NOTICE.md)
+Third-party and upstream-derived components retain the license notices that
+accompany those components.
 - [docs/MAGIC_CITY_PUBLIC_IP_THESIS.md](/Users/evankereiakes/Documents/Codex/agent-verification/docs/MAGIC_CITY_PUBLIC_IP_THESIS.md)
 - [Partner and white-label quickstart](docs/partner-white-label-quickstart.md)
 - [Production security profile and migration](docs/production-security.md)
