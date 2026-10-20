@@ -599,7 +599,7 @@ function storefront(pathname, searchParams = new URLSearchParams()) {
       '<main><h1>Results for test gadget</h1>',
       '<div data-component-type="s-search-result" data-asin="RECOVERY-ASIN">',
       '<h2><a href="/dp/test-gadget">Test gadget</a></h2>',
-      '<span class="a-price">$3.50</span><span aria-label="Amazon Prime">Prime delivery</span>',
+      '<span class="a-price">$3.50</span><span aria-label="Amazon Prime">Prime delivery</span><span>FREE delivery Tomorrow</span>',
       '<button id="recovery-search-add" onclick="sessionStorage.setItem(\'selection-click-count\', String(Number(sessionStorage.getItem(\'selection-click-count\') || 0) + 1)); location.href=\'/post-add-confirmation\'">Add to cart</button>',
       '</div><a id="nav-cart" href="/cart"><span id="nav-cart-count">0</span> Cart</a>',
       '</main>'
@@ -1273,6 +1273,10 @@ async function main() {
     let prepareCartCheckpointCommittedAtMs = 0;
     let dropPrepareCartCheckpointConnection = false;
     let prepareCartConnectionDroppedAtMs = 0;
+    let dropSelectMatchCheckpointResponse = false;
+    let selectMatchCheckpointCommittedAtMs = 0;
+    let dropSelectMatchCheckpointConnection = false;
+    let selectMatchConnectionDroppedAtMs = 0;
     let dropContinueCheckoutCheckpointResponse = false;
     let continueCheckoutCheckpointCommittedAtMs = 0;
     let dropCommittedCheckpointResponses = new Set();
@@ -1482,6 +1486,23 @@ async function main() {
           req.socket.destroy();
           return;
         }
+        if (dropSelectMatchCheckpointResponse
+          && body.planActionStatus !== 'waiting'
+          && /^select-match(?:-\d+)?$/.test(expected.id)) {
+          dropSelectMatchCheckpointResponse = false;
+          selectMatchCheckpointCommittedAtMs = Date.now();
+          return json(res, 503, { error: 'test_committed_selection_checkpoint_response_lost' });
+        }
+        if (dropSelectMatchCheckpointConnection
+          && body.planActionStatus !== 'waiting'
+          && /^select-match(?:-\d+)?$/.test(expected.id)) {
+          dropSelectMatchCheckpointConnection = false;
+          selectMatchConnectionDroppedAtMs = Date.now();
+          await context.setOffline(true);
+          setTimeout(() => { void context.setOffline(false).catch(() => null); }, 120);
+          req.socket.destroy();
+          return;
+        }
         if (dropContinueCheckoutCheckpointResponse
           && body.planActionStatus !== 'waiting'
           && /^continue-checkout(?:-\d+)?$/.test(expected.id)) {
@@ -1622,7 +1643,12 @@ async function main() {
       throw error;
     });
     console.log(`native-runner browser smoke paired (${smokeMode})`);
-    const prepareSelectionOnlySession = async (pathname, { goal = 'buy test gadget', budget = '$4', selectionIntelligence = null } = {}) => {
+    const prepareSelectionOnlySession = async (pathname, {
+      goal = 'buy test gadget',
+      budget = '$4',
+      selectionIntelligence = null,
+      includeNextAction = false
+    } = {}) => {
       checkpoints.length = 0;
       fulfillment = null;
       transientRunnerStatusFailures = 0;
@@ -1641,9 +1667,16 @@ async function main() {
         extensionCheckoutProfileEnabled: false,
         extensionPrimeRequired: true
       });
-      const selectAction = generatedPlan.actions.find((action) => action.type === 'select_candidate');
+      const selectActionIndex = generatedPlan.actions.findIndex((action) => action.type === 'select_candidate');
+      const selectAction = generatedPlan.actions[selectActionIndex];
       if (!selectAction) fail('browser_extension_selection_focus_action_missing');
-      const selectionPlan = rehashExtensionPlan({ ...generatedPlan, actions: [selectAction] });
+      const selectionActions = includeNextAction
+        ? generatedPlan.actions.slice(selectActionIndex, selectActionIndex + 2)
+        : [selectAction];
+      if (includeNextAction && selectionActions[1]?.id !== 'prepare-cart') {
+        fail(`browser_extension_selection_focus_next_action_changed:${selectionActions[1]?.id || 'missing'}`);
+      }
+      const selectionPlan = rehashExtensionPlan({ ...generatedPlan, actions: selectionActions });
       session = {
         ...session,
         id: sessionId,
@@ -2111,6 +2144,102 @@ async function main() {
       await merchantPage.close();
       console.log(JSON.stringify({ amazonPurchaseSimulations: purchaseScenarioResults.length, scenarios: purchaseScenarioResults }, null, 2));
       console.log('native-runner selection injection recovery smoke passed');
+      return;
+    }
+    if (smokeMode === 'selection-checkpoint-response-loss') {
+      dropSelectMatchCheckpointResponse = true;
+      const { merchantPage } = await prepareSelectionOnlySession('/selection-recovery-search');
+      const wake = await runSelectionFocus('browser-smoke-selection-checkpoint-response-loss');
+      const clickCount = Number(await merchantPage.evaluate(() => sessionStorage.getItem('selection-click-count') || '0'));
+      const completedSelectionCheckpoints = checkpoints.filter((checkpoint) => (
+        checkpoint.planActionId === 'select-match' && checkpoint.planActionStatus !== 'waiting'
+      ));
+      const recoveryMs = Date.now() - selectMatchCheckpointCommittedAtMs;
+      const sawReconnectingRunner = (wake.progress || []).some((entry) => (
+        entry?.activeRun?.progressState === 'reconnecting_control_plane'
+        && entry?.activeRun?.progressLabel === 'Reconnecting Runner'
+      ));
+      const runnerState = await worker.evaluate(() => chrome.storage.local.get(['lastError', 'lastExecution', 'activeRun']));
+      if (selectMatchCheckpointCommittedAtMs <= 0
+        || recoveryMs <= 0
+        || recoveryMs >= 8_000
+        || clickCount !== 1
+        || completedSelectionCheckpoints.length !== 1
+        || !completedSelectionCheckpoints[0]?.verifiedMilestones?.includes('candidate_selected')
+        || !sawReconnectingRunner
+        || runnerState.activeRun
+        || runnerState.lastExecution?.status === 'retrying_control_plane') {
+        fail(`browser_extension_selection_checkpoint_response_loss_recovery_failed:${JSON.stringify({
+          selectMatchCheckpointCommittedAtMs,
+          recoveryMs,
+          clickCount,
+          completedSelectionCheckpoints,
+          sawReconnectingRunner,
+          runnerState,
+          wake
+        })}`);
+      }
+      recordPurchaseScenario('Lost committed select-match checkpoint response reconciles without another cart click', {
+        recoveryMs,
+        clickCount,
+        completedCheckpointCount: completedSelectionCheckpoints.length
+      });
+      await merchantPage.close();
+      console.log(JSON.stringify({ amazonPurchaseSimulations: purchaseScenarioResults.length, scenarios: purchaseScenarioResults }, null, 2));
+      console.log('native-runner selection checkpoint response-loss smoke passed');
+      return;
+    }
+    if (smokeMode === 'selection-checkpoint-connection-drop') {
+      dropSelectMatchCheckpointConnection = true;
+      const { merchantPage } = await prepareSelectionOnlySession('/selection-recovery-search', {
+        includeNextAction: true
+      });
+      const wake = await runSelectionFocus('browser-smoke-selection-checkpoint-connection-drop');
+      const clickCount = Number(await merchantPage.evaluate(() => sessionStorage.getItem('selection-click-count') || '0'));
+      const completedSelectionCheckpoints = checkpoints.filter((checkpoint) => (
+        checkpoint.planActionId === 'select-match' && checkpoint.planActionStatus !== 'waiting'
+      ));
+      const nextCheckpoint = checkpoints.find((checkpoint) => (
+        checkpoint.planActionId === 'prepare-cart'
+        && checkpoint.planActionStatus !== 'waiting'
+        && Number(checkpoint.testReceivedAtMs || 0) > selectMatchConnectionDroppedAtMs
+      ));
+      const recoveryMs = Number(nextCheckpoint?.testReceivedAtMs || 0) - selectMatchConnectionDroppedAtMs;
+      const sawReconnectingRunner = (wake.progress || []).some((entry) => (
+        entry?.activeRun?.progressState === 'reconnecting_control_plane'
+        && entry?.activeRun?.progressLabel === 'Reconnecting Runner'
+      ));
+      const runnerState = await worker.evaluate(() => chrome.storage.local.get(['lastError', 'lastExecution', 'activeRun']));
+      if (selectMatchConnectionDroppedAtMs <= 0
+        || recoveryMs <= 0
+        || recoveryMs >= 8_000
+        || clickCount !== 1
+        || completedSelectionCheckpoints.length !== 1
+        || !completedSelectionCheckpoints[0]?.verifiedMilestones?.includes('candidate_selected')
+        || !nextCheckpoint
+        || !sawReconnectingRunner
+        || runnerState.activeRun
+        || runnerState.lastExecution?.status === 'retrying_control_plane') {
+        fail(`browser_extension_selection_checkpoint_connection_drop_recovery_failed:${JSON.stringify({
+          selectMatchConnectionDroppedAtMs,
+          recoveryMs,
+          clickCount,
+          completedSelectionCheckpoints,
+          nextCheckpoint,
+          sawReconnectingRunner,
+          runnerState,
+          wake
+        })}`);
+      }
+      recordPurchaseScenario('Literal select-match checkpoint disconnect advances to prepare-cart without another cart click', {
+        recoveryMs,
+        clickCount,
+        completedSelectionCheckpointCount: completedSelectionCheckpoints.length,
+        nextActionId: nextCheckpoint.planActionId
+      });
+      await merchantPage.close();
+      console.log(JSON.stringify({ amazonPurchaseSimulations: purchaseScenarioResults.length, scenarios: purchaseScenarioResults }, null, 2));
+      console.log('native-runner selection checkpoint connection-drop smoke passed');
       return;
     }
     if (smokeMode === 'selection-delayed-page-load') {
